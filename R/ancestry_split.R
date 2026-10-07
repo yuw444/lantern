@@ -19,7 +19,7 @@
 
 #' Normalize gla/arm_id into .Call-ready sentinels
 #'
-#' \code{gla = NULL} (either argument NULL) disables GLA shrinkage: an empty
+#' \code{gla = NULL} (either argument NULL) disables shrinkage: an empty
 #' matrix/vector signal the C side to reproduce the pre-shrinkage behavior
 #' exactly (see \code{ancestry.c}).
 #' @keywords internal
@@ -28,6 +28,18 @@
     return(list(gla = matrix(numeric(0), nrow = 0, ncol = 0), arm_id = integer(0)))
   storage.mode(gla) <- "double"
   list(gla = gla, arm_id = as.integer(arm_id))
+}
+
+#' Uniform shrinkage target: 1/K for each of K populations
+#'
+#' One-row target matrix for \code{split_diploid()} /
+#' \code{split_diploid_multi()}'s \code{gla} argument (use with an all-zero
+#' \code{arm_id}). For every ambiguous pair the C code shrinks toward the
+#' pair's target share \code{t_a / (t_a + t_b)}, which is exactly 1/2 here.
+#' @keywords internal
+.uniform_shrink_target <- function(pop_names) {
+  matrix(1 / length(pop_names), nrow = 1L, ncol = length(pop_names),
+         dimnames = list("all", pop_names))
 }
 
 .split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
@@ -102,14 +114,16 @@ count_ancestry_codes <- function(mat, code) {
 #' result$african
 #' result$european
 #'
-#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns population
-#'   names) of per-arm global local ancestry proportions, as produced by
-#'   \code{\link{ancestry_split}} internally. When \code{NULL} (default),
-#'   GLA shrinkage is disabled and behavior matches the original p1/p2
-#'   estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param gla Optional shrinkage target: numeric matrix with one row per
+#'   target group and two columns (AFR, EUR) of target proportions. A mixed
+#'   heterozygote's split is shrunk toward its row's AFR share by the
+#'   ambiguous share \eqn{w} of the variant's evidence.
+#'   \code{\link{ancestry_split}} uses a single row of 1/2. When \code{NULL}
+#'   (default), no shrinkage: the raw p1/p2 ratio is used, with a 0.5/0.5
+#'   fallback only when every carrier is ambiguous.
 #' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
-#'   giving each variant's row index into \code{gla} (0-based). Required
-#'   together with \code{gla}.
+#'   giving each variant's row index into \code{gla} (0-based; all zeros for
+#'   a one-row target). Required together with \code{gla}.
 #'
 #' @export
 split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
@@ -170,14 +184,17 @@ split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
 #' out <- split_diploid_multi(gt, anc, pure, mixed)
 #' names(out)   # "AFR" "EUR" "NAT"
 #'
-#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns matching
-#'   \code{names(pure_codes)}) of per-arm global local ancestry proportions,
-#'   as produced by \code{\link{ancestry_split}} internally. When \code{NULL}
-#'   (default), GLA shrinkage is disabled and behavior matches the original
-#'   p[k] estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param gla Optional shrinkage target: numeric matrix with one row per
+#'   target group and columns matching \code{names(pure_codes)}. Each
+#'   ambiguous pair (a, b) is shrunk toward \eqn{t_a / (t_a + t_b)} by the
+#'   pair's ambiguous share \eqn{w} of the evidence.
+#'   \code{\link{ancestry_split}} uses a single row of 1/K (i.e. 1/2 for
+#'   every pair). When \code{NULL} (default), no shrinkage: the raw p[k]
+#'   ratio is used, with a 0.5/0.5 fallback only when a pair has no
+#'   unambiguous evidence.
 #' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
-#'   giving each variant's row index into \code{gla} (0-based). Required
-#'   together with \code{gla}.
+#'   giving each variant's row index into \code{gla} (0-based; all zeros for
+#'   a one-row target). Required together with \code{gla}.
 #'
 #' @export
 split_diploid_multi <- function(gt_genotype, ancestry,
@@ -864,17 +881,20 @@ read_bed_file <- function(bed, bim, fam) {
 #'   "chr" matches) -- other chromosomes' genotypes are never read into R.
 #'   If the contig can't be resolved, all variants are queried and filtered
 #'   in R instead (slower, more memory, same result).
-#' @param use_gla Logical, \code{mode = "dosage"} only. When \code{TRUE}
-#'   (default), per-arm GLA (global local ancestry) shrinkage is computed
-#'   and applied automatically (see the "Core Algorithm" section of the
-#'   package's \code{CLAUDE.md} for the formula/rationale). When
-#'   \code{FALSE}, GLA shrinkage is skipped entirely and the split
-#'   reproduces the original pre-shrinkage p[k] estimator exactly,
-#'   including its 0.5/0.5 singleton fallback -- equivalent to calling
-#'   \code{\link{split_diploid_multi}} with \code{gla = NULL}. Ignored
-#'   (no effect) when \code{mode = "haplotype"}, which is deterministic
-#'   and has no ambiguous ratio to shrink.
 #' @param verbose Print step-by-step progress messages.
+#'
+#' @section Shrinkage toward 1/2 (dosage mode): A mixed-ancestry
+#'   heterozygote carries one haplotype from each of its two ancestries, so
+#'   which one holds the alt allele cannot be read off the genotype. Its
+#'   allele is split between the two ancestries in proportion to the
+#'   variant's unambiguous carriers (the raw ratio), shrunk toward 1/2 by
+#'   \eqn{w}, the share of the variant's alt-allele evidence that comes from
+#'   ambiguous heterozygotes:
+#'   \deqn{p = (1 - w)\, p_{raw} + w / 2.}
+#'   A variant carried only by ambiguous heterozygotes (\eqn{w = 1}) is
+#'   split 1/2 : 1/2. With K populations every pair is shrunk toward 1/2
+#'   in the same way. \code{mode = "haplotype"} is deterministic and
+#'   applies no shrinkage.
 #'
 #' @return Invisibly, a list with one named numeric matrix (variants x
 #'   samples) per population (named after the MSP population codes, e.g.
@@ -902,7 +922,7 @@ read_bed_file <- function(bed, bim, fam) {
 #'
 #' @export
 ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
-                            chrom = NULL, use_gla = TRUE, verbose = TRUE) {
+                            chrom = NULL, verbose = TRUE) {
   mode <- match.arg(mode)
 
   if (verbose) message("=== LANTERN Ancestry Split (Step 1, mode = ", mode, ") ===\n")
@@ -951,34 +971,16 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
   anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
                          nrow = n_variants, ncol = length(common_samples))
 
-  # ---- GLA shrinkage target (dosage mode + use_gla only; haplotype
-  # splitting is deterministic and has no ambiguous ratio to shrink) ----
-  gla_combined <- NULL
-  arm_id       <- NULL
-  if (mode == "dosage" && use_gla) {
-    if (verbose) message("\nStep 6b: Computing per-arm global local ancestry (GLA)...")
-    anc_hap0_tract <- common$anc_hap0_tract
-    anc_hap1_tract <- common$anc_hap1_tract
-    n_tracts       <- ncol(anc_hap0_tract)
-    p0_tract_mat <- matrix(match(as.vector(anc_hap0_tract), hap_codes_v),
-                            nrow = length(common_samples), ncol = n_tracts)
-    p1_tract_mat <- matrix(match(as.vector(anc_hap1_tract), hap_codes_v),
-                            nrow = length(common_samples), ncol = n_tracts)
-    anc_diploid_tract <- matrix(lookup[cbind(as.vector(p0_tract_mat), as.vector(p1_tract_mat))],
-                                 nrow = length(common_samples), ncol = n_tracts)
-
-    gla_by_chrom <- .compute_arm_gla(common$tract_df, anc_diploid_tract,
-                                      pure_codes_named, mixed_codes_df)
-    gla_combined <- do.call(rbind, gla_by_chrom)
-    rownames(gla_combined) <- unlist(lapply(names(gla_by_chrom), function(cc) paste0(cc, c(".p", ".q"))))
-
-    variant_key <- paste0("chr", sub("^chr", "", variant_info$chrom),
-                          ifelse(.assign_arm(variant_info$chrom, variant_info$pos) == 0L, ".p", ".q"))
-    arm_id <- match(variant_key, rownames(gla_combined)) - 1L   # 0-based for C
-    if (anyNA(arm_id))
-      stop(sum(is.na(arm_id)), " variant(s) have no matching arm/GLA entry ",
-           "(chrom+arm not found in gla_combined). This should be unreachable ",
-           "given .parse_vcf_msp_common()'s tract filtering; please report it.")
+  # ---- Shrinkage target (dosage mode; haplotype splitting is deterministic
+  # and has no ambiguous ratio to shrink): uniform 1/K for every population,
+  # i.e. each ambiguous pair's split is shrunk toward 1/2 by the share w of
+  # its evidence that is ambiguous. One target row shared by all variants,
+  # so no genomic position / arm lookup is needed. ----
+  shrink_target <- NULL
+  arm_id        <- NULL
+  if (mode == "dosage") {
+    shrink_target <- .uniform_shrink_target(pop_names)
+    arm_id        <- integer(n_variants)
   }
 
   # ---- Split by ancestry ----
@@ -991,7 +993,7 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
     gt_diploid <- gt_hap0_mat + gt_hap1_mat
     res <- split_diploid_multi(gt_diploid, anc_diploid,
                                 pure_codes_named, mixed_codes_df,
-                                gla = gla_combined, arm_id = arm_id)
+                                gla = shrink_target, arm_id = arm_id)
   }
 
   # ---- Per-variant pure-ancestry sample counts (feeds Step 3 gene weights) ----
@@ -1064,17 +1066,11 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
 #'   Only used when \code{vcf_path}/\code{msp_path} are supplied.
 #' @param verbose Print progress messages (default TRUE)
 #'
-#' @section GLA shrinkage: The \code{vcf_path}/\code{msp_path} shortcut
-#'   delegates to \code{\link{ancestry_split}}, which computes and applies
-#'   per-arm global local ancestry (GLA) shrinkage automatically from tract
-#'   positions. The direct \code{gt_matrix}/\code{pt_matrix} path has no
-#'   genomic position information and cannot derive GLA automatically, so it
-#'   always uses the original (unshrunk) p1/p2 estimator; this path also
-#'   reorders and filters variants internally (sample/region overlap,
-#'   monomorphic removal), so a caller-supplied \code{gla}/\code{arm_id}
-#'   could not be reliably kept aligned. Call \code{\link{split_diploid}}
-#'   directly (no internal reordering) if you need GLA shrinkage with a
-#'   pre-computed \code{gla}/\code{arm_id} of your own.
+#' @section Shrinkage: Both input paths split ambiguous mixed-ancestry
+#'   heterozygotes with the same shrinkage toward 1/2 as
+#'   \code{\link{ancestry_split}} (see its "Shrinkage toward 1/2" section).
+#'   The target is the same for every variant, so the direct
+#'   \code{gt_matrix}/\code{pt_matrix} path needs no position information.
 #'
 #' @return List with elements:
 #'   \item{african}{African ancestry-specific dosage matrix}
@@ -1371,7 +1367,11 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
   # ========================================================================
   if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
 
-  result <- split_diploid(gt_subset, pt_subset)
+  # Same shrinkage toward 1/2 as ancestry_split(); the target is uniform, so
+  # it needs no variant positions and stays aligned after the filtering above.
+  result <- split_diploid(gt_subset, pt_subset,
+                          gla = .uniform_shrink_target(c("AFR", "EUR")),
+                          arm_id = integer(nrow(gt_subset)))
 
   # Capture post-filter variant count BEFORE removing gt_subset
   n_variants_kept_final <- nrow(gt_subset)

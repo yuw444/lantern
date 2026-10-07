@@ -35,15 +35,18 @@ One row per mixed-ancestry diploid type.
 Example for 3 populations:
 \code{data.frame(code=c(2L,5L,6L), pop1=c("AFR","AFR","EUR"), pop2=c("EUR","NAT","NAT"))}}
 
-\item{gla}{Optional 2 x K numeric matrix (rows "p"/"q", columns matching
-\code{names(pure_codes)}) of per-arm global local ancestry proportions,
-as produced by \code{\link{ancestry_split}} internally. When \code{NULL}
-(default), GLA shrinkage is disabled and behavior matches the original
-p[k] estimator exactly, including its 0.5/0.5 singleton fallback.}
+\item{gla}{Optional shrinkage target: numeric matrix with one row per
+target group and columns matching \code{names(pure_codes)}. Each
+ambiguous pair (a, b) is shrunk toward \eqn{t_a / (t_a + t_b)} by the
+pair's ambiguous share \eqn{w} of the evidence.
+\code{\link{ancestry_split}} uses a single row of 1/K (i.e. 1/2 for
+every pair). When \code{NULL} (default), no shrinkage: the raw p[k]
+ratio is used, with a 0.5/0.5 fallback only when a pair has no
+unambiguous evidence.}
 
 \item{arm_id}{Optional integer vector (length = \code{nrow(gt_genotype)})
-giving each variant's row index into \code{gla} (0-based). Required
-together with \code{gla}.}
+giving each variant's row index into \code{gla} (0-based; all zeros for
+a one-row target). Required together with \code{gla}.}
 }
 \value{
 Named list of K numeric matrices (variants x samples), one per

@@ -345,12 +345,11 @@ test_that("ancestry_split mode = 'dosage' splits mixed hets proportionally", {
 
   expect_equal(result$mode, "dosage")
   # Singleton mixed het: with no unambiguous evidence at all, w = 1, so the
-  # split falls back entirely to this variant's arm-level GLA rather than a
-  # flat 0.5/0.5. Here the only tract has 1 mixed (S1) + 1 pure-EUR (S2)
-  # diploid call: GLA_AFR = (2*0+1)/(2*(0+1+1)) = 0.25, GLA_EUR = 0.75.
+  # split is exactly the 1/2 target -- not this tract's GLA (0.25 AFR here,
+  # 1 mixed + 1 pure-EUR diploid call), which ancestry_split() no longer uses.
   expect_equal(result$AFR[1, 1] + result$EUR[1, 1], 1, tolerance = 1e-6)
-  expect_equal(result$AFR[1, 1], 0.25, tolerance = 1e-6)
-  expect_equal(result$EUR[1, 1], 0.75, tolerance = 1e-6)
+  expect_equal(result$AFR[1, 1], 0.5, tolerance = 1e-6)
+  expect_equal(result$EUR[1, 1], 0.5, tolerance = 1e-6)
 })
 
 test_that("ancestry_split returns ancestry_counts aligned with variant_info", {
@@ -423,33 +422,32 @@ test_that("ancestry_split supports K = 3 populations", {
   expect_equal(result$NAT[1, 3], 0, tolerance = 1e-9)  # S3 pure NAT, no alt
 })
 
-test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singleton vs non-singleton blending, and monomorphic/no-tract filtering", {
+test_that("ancestry_split K=3 dosage mode: shrinkage toward 1/2 is the same on both arms, singleton vs non-singleton blending, and monomorphic/no-tract filtering", {
   # Full end-to-end pipeline (real MSP + VCF text, not direct C calls) with
   # K=3 (AFR/EUR/NAT) and two tracts straddling chr19's centromere
-  # (p_end=24498980, q_start=27190874), designed so p-arm and q-arm GLA
-  # differ measurably:
+  # (p_end=24498980, q_start=27190874). The two arms have very different
+  # ancestry mixes, which the old GLA target followed; the 1/2 target must
+  # ignore them:
   #
   # p-arm tract [100,1000]: 6 samples, one of each pure/mixed combination
   #   (S1=AFR/AFR, S2=EUR/EUR, S3=NAT/NAT, S4=AFR/EUR, S5=AFR/NAT, S6=EUR/NAT)
-  #   -> symmetric by construction: GLA_AFR = GLA_EUR = GLA_NAT = 1/3.
+  #   -> symmetric (old GLA 1/3 each).
   # q-arm tract [3e7,3.0001e7]: AFR-heavy (S1,S2,S3,S6=AFR/AFR, S4=AFR/EUR,
-  #   S5=AFR/NAT) -> GLA_AFR=5/6, GLA_EUR=1/12, GLA_NAT=1/12.
+  #   S5=AFR/NAT) -> old GLA_AFR=5/6, GLA_EUR=GLA_NAT=1/12.
   #
   # Variants (chosen to be hand-verifiable):
   #   V4 chr19:150   (p-arm) monomorphic (all hom-ref) -> filtered out
   #   V3 chr19:200   (p-arm) singleton ambiguous AFR/NAT het (S5 only carrier)
-  #                  -> w=1, blends fully to GLA_AFR/(GLA_AFR+GLA_NAT) = 1/2
-  #                  (symmetric arm, so this also sanity-checks the old
-  #                  0.5/0.5 fallback is reproduced when GLA itself is 0.5)
+  #                  -> w=1, split exactly 1/2 : 1/2
   #   V1 chr19:3e7+100 (q-arm) non-singleton ambiguous AFR/EUR het (S4),
   #                  plus unambiguous S1 (pure AFR het) + S2 (pure AFR hom-alt)
   #                  -> pk[AFR]=1 (D=3, num[AFR]=3, no EUR/NAT evidence at all),
   #                  allele-weighted total = D + amb = 3 + 1 = 4 (S2's hom-alt
   #                  counts 2x), w = amb/total = 1/4,
-  #                  gla_frac_AFR(q) = (5/6)/(5/6+1/12) = 10/11,
-  #                  blended = (3/4)*1.0 + (1/4)*(10/11) = 43/44
+  #                  blended = (3/4)*1.0 + (1/4)*(1/2) = 7/8
+  #                  (old GLA target gave 43/44)
   #   V2 chr19:3e7+200 (q-arm) singleton ambiguous AFR/EUR het (S4 only carrier)
-  #                  -> w=1, blends fully to gla_frac_AFR(q) = 10/11
+  #                  -> w=1, split exactly 1/2 : 1/2 (old GLA gave 10/11)
   #   V5 chr19:99999999 (outside both tracts) -> dropped, "no tract"
   td <- tempfile()
   dir.create(td, recursive = TRUE)
@@ -494,16 +492,16 @@ test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singlet
   expect_equal(result$overlap$n_monomorphic_filtered, 1)
   expect_equal(result$overlap$n_no_tract, 1)
 
-  # V3: p-arm singleton AFR/NAT -> symmetric GLA -> 0.5/0.5
+  # V3: p-arm singleton AFR/NAT -> 0.5/0.5
   s5_idx <- match("S5", result$sample_ids)
   expect_equal(result$AFR[1, s5_idx], 0.5, tolerance = 1e-9)
   expect_equal(result$NAT[1, s5_idx], 0.5, tolerance = 1e-9)
   expect_equal(result$EUR[1, s5_idx], 0, tolerance = 1e-9)
 
-  # V1: q-arm non-singleton AFR/EUR, partial shrinkage (w=1/3)
+  # V1: q-arm non-singleton AFR/EUR, partial shrinkage toward 1/2 (w=1/4)
   s4_idx <- match("S4", result$sample_ids)
-  expect_equal(result$AFR[2, s4_idx], 43/44, tolerance = 1e-9)
-  expect_equal(result$EUR[2, s4_idx], 1/44,  tolerance = 1e-9)
+  expect_equal(result$AFR[2, s4_idx], 7/8, tolerance = 1e-9)
+  expect_equal(result$EUR[2, s4_idx], 1/8, tolerance = 1e-9)
   expect_equal(result$AFR[2, s4_idx] + result$EUR[2, s4_idx] + result$NAT[2, s4_idx], 1, tolerance = 1e-9)
   # unambiguous pure-AFR carriers on the same variant are untouched by shrinkage
   s1_idx <- match("S1", result$sample_ids)
@@ -511,73 +509,20 @@ test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singlet
   expect_equal(result$AFR[2, s1_idx], 1, tolerance = 1e-9)
   expect_equal(result$AFR[2, s2_idx], 2, tolerance = 1e-9)
 
-  # V2: q-arm singleton AFR/EUR -> full shrinkage to GLA_AFR/(GLA_AFR+GLA_EUR) = 10/11
-  expect_equal(result$AFR[3, s4_idx], 10/11, tolerance = 1e-9)
-  expect_equal(result$EUR[3, s4_idx], 1/11,  tolerance = 1e-9)
+  # V2: q-arm singleton AFR/EUR -> full shrinkage to 1/2, even though this
+  # arm is AFR-heavy (old GLA target gave 10/11)
+  expect_equal(result$AFR[3, s4_idx], 0.5, tolerance = 1e-9)
+  expect_equal(result$EUR[3, s4_idx], 0.5, tolerance = 1e-9)
 
   # ancestry_counts for V1: 4 pure-AFR carriers (S1,S2,S3,S6) at that tract
   expect_equal(unname(result$ancestry_counts[2, "AFR"]), 4)
 })
 
-test_that("ancestry_split(use_gla = FALSE) reproduces the pre-shrinkage estimator on the same MSP+VCF fixture", {
-  # Identical fixture to the test above; use_gla=FALSE should reproduce the
-  # ORIGINAL (pre-shrinkage) p[k] estimator exactly -- V1/V2 (q-arm, where
-  # GLA and flat-0.5 genuinely disagree) now differ from that test's GLA
-  # values, while V3 (symmetric p-arm, GLA happens to equal 0.5 there too)
-  # stays numerically identical either way.
-  td <- tempfile()
-  dir.create(td, recursive = TRUE)
-  on.exit(unlink(td, recursive = TRUE), add = TRUE)
-
-  samples <- paste0("S", 1:6)
-  hdr_samples <- paste(vapply(samples, function(s) paste0(s, c(".0", ".1")), character(2)), collapse = "\t")
-
-  msp <- tempfile(fileext = ".tsv.gz", tmpdir = td)
-  con <- gzfile(msp, "wt")
-  writeLines(c(
-    "#Subpopulation order/codes:\tAFR=0\tEUR=1\tNAT=2",
-    paste0("#chm\tspos\tepos\tsgpos\tegpos\tn snps\t", hdr_samples)
-  ), con)
-  writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t10\t0\t0\t1\t1\t2\t2\t0\t1\t0\t2\t1\t2",
-    "chr19\t30000000\t30001000\t30.0\t30.1\t10\t0\t0\t0\t0\t0\t0\t0\t1\t0\t2\t0\t0"
-  ), con)
-  close(con)
-
-  gt_line <- function(pos, gts) paste(c("chr19", pos, ".", "A", "T", ".", "PASS", ".", "GT", gts), collapse = "\t")
-  vcf <- tempfile(fileext = ".vcf", tmpdir = td)
-  writeLines(c(
-    "##fileformat=VCFv4.2",
-    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
-    paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", samples), collapse = "\t"),
-    gt_line(150,      c("0|0", "0|0", "0|0", "0|0", "0|0", "0|0")),
-    gt_line(200,      c("0|0", "0|0", "0|0", "0|0", "0|1", "0|0")),
-    gt_line(30000100, c("0|1", "1|1", "0|0", "0|1", "0|0", "0|0")),
-    gt_line(30000200, c("0|0", "0|0", "0|0", "0|1", "0|0", "0|0")),
-    gt_line(99999999, c("0|1", "0|0", "0|0", "0|0", "0|0", "0|0"))
-  ), vcf)
-
-  result <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
-                            use_gla = FALSE, verbose = FALSE)
-
-  expect_equal(nrow(result$variant_info), 3)
-  s4_idx <- match("S4", result$sample_ids)
-  s5_idx <- match("S5", result$sample_ids)
-
-  # V3 (p-arm singleton AFR/NAT): flat fallback, same numeric value as the
-  # GLA-enabled test (that arm's GLA happened to be exactly 0.5 too)
-  expect_equal(result$AFR[1, s5_idx], 0.5, tolerance = 1e-9)
-  expect_equal(result$NAT[1, s5_idx], 0.5, tolerance = 1e-9)
-
-  # V1 (q-arm non-singleton AFR/EUR): raw ratio only, NOT blended toward GLA
-  # -> 1.0/0.0, not the 32/33 / 1/33 seen with use_gla=TRUE
-  expect_equal(result$AFR[2, s4_idx], 1.0, tolerance = 1e-9)
-  expect_equal(result$EUR[2, s4_idx], 0.0, tolerance = 1e-9)
-
-  # V2 (q-arm singleton AFR/EUR): flat 0.5/0.5 fallback, NOT the GLA-derived
-  # 10/11 / 1/11 seen with use_gla=TRUE
-  expect_equal(result$AFR[3, s4_idx], 0.5, tolerance = 1e-9)
-  expect_equal(result$EUR[3, s4_idx], 0.5, tolerance = 1e-9)
+test_that("ancestry_split no longer accepts use_gla (shrinkage toward 1/2 is fixed)", {
+  # The GLA target and the use_gla switch were removed; an old call must fail
+  # loudly rather than silently get a different estimator than it asked for.
+  expect_error(ancestry_split("x.vcf", "x.msp", use_gla = FALSE),
+               "unused argument")
 })
 
 test_that("ancestry_split K=3 haplotype mode deterministically splits via full MSP+VCF pipeline", {
@@ -1121,4 +1066,22 @@ test_that("ancestry_split(chrom=) does not confuse tracts across chromosomes wit
   # S0 is pure EUR on chr1's tract -- must NOT pick up chr2's pure-AFR tract.
   expect_equal(result$EUR[1, 1], 1)
   expect_equal(result$AFR[1, 1], 0)
+})
+
+test_that("ancestry_split_dosage (matrix path) shrinks ambiguous hets toward 1/2 like ancestry_split()", {
+  # One variant: sample_A pure-AFR het (unambiguous), sample_B AFR/EUR mixed
+  # het (ambiguous), sample_C pure-EUR hom-ref.
+  # raw p1 = 1 (only AFR evidence), w = N5 / total_alt = 1/2
+  # -> sample_B: AFR = (1 - 1/2) * 1 + (1/2) * 1/2 = 0.75 (no shrinkage would give 1.0)
+  gt <- matrix(c(1, 1, 0), nrow = 1,
+               dimnames = list("var1", c("sample_A", "sample_B", "sample_C")))
+  pt <- matrix(c(3, 2, 1), ncol = 1,
+               dimnames = list(c("sample_A", "sample_B", "sample_C"), "var1"))
+
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
+  # output matrices are unnamed; samples keep input order (A, B, C)
+  expect_equal(result$african[1, 2], 0.75, tolerance = 1e-9)
+  expect_equal(result$european[1, 2], 0.25, tolerance = 1e-9)
+  # unambiguous carrier untouched
+  expect_equal(result$african[1, 1], 1, tolerance = 1e-9)
 })

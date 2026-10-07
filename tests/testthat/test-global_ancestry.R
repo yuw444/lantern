@@ -171,10 +171,10 @@ test_that("split_diploid_multi validates gla column names against pure_codes", {
 })
 
 # ============================================================================
-# End-to-end: ancestry_split() wires GLA shrinkage automatically (dosage mode)
+# End-to-end: ancestry_split() shrinks toward 1/2 (not GLA) in dosage mode
 # ============================================================================
 
-test_that("ancestry_split dosage mode applies GLA shrinkage proportionally to w", {
+test_that("ancestry_split dosage mode shrinks toward 1/2 proportionally to w", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -202,14 +202,13 @@ test_that("ancestry_split dosage mode applies GLA shrinkage proportionally to w"
 
   result <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19", verbose = FALSE)
 
-  # GLA for this tract: 2 pure-AFR diploid calls (S1,S3) + 1 mixed (S2)
-  # GLA_AFR = (2*2+1)/(2*3) = 5/6 ; GLA_EUR = (0+1)/6 = 1/6
-  gla_afr <- 5 / 6
+  # Shrinkage target is 1/2 regardless of the tract's ancestry mix (this
+  # tract's GLA would be 5/6 AFR -- the old target -- and must NOT be used).
   # w = N5/total_alt: N2=1 (S1 pure AFR het), N5=1 (S2 mixed het), no hom-alt
   # carriers here so total_alt equals the unweighted carrier count (2) -> w=1/2
   # raw p1 = (0+1+0)/((1+1)-1) = 1
   w <- 0.5
-  expected_afr <- (1 - w) * 1.0 + w * gla_afr
+  expected_afr <- (1 - w) * 1.0 + w * 0.5      # = 0.75 (GLA would give 11/12)
   s2_idx <- match("S2", result$sample_ids)
   expect_equal(result$AFR[1, s2_idx], expected_afr, tolerance = 1e-8)
   expect_equal(result$AFR[1, s2_idx] + result$EUR[1, s2_idx], 1, tolerance = 1e-8)

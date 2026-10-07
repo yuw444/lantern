@@ -1,6 +1,14 @@
 # ============================================================================
-# Global local ancestry (GLA) shrinkage helpers
+# Global local ancestry (GLA) shrinkage helpers -- NOT used by ancestry_split()
 # ============================================================================
+#
+# ancestry_split() shrinks ambiguous splits toward 1/2, not toward GLA: in
+# the chr19 simulations the true AFR share of mixed-het alleles was ~0.50,
+# while GLA (~0.82) measures how common AFR haplotypes are in the cohort,
+# which does not decide which of a mixed het's two haplotypes carries the
+# allele. These internal helpers are kept only so the simulation scripts
+# (simulation/00_prep_*.R, simulation/gla_vs_half/) can rebuild the GLA arm
+# of the GLA-vs-1/2 comparison.
 #
 # When a variant's alt allele is carried almost exclusively by ambiguous
 # mixed-ancestry heterozygotes, the per-variant p1/p2 (or p[k]) ancestry

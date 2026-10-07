@@ -315,9 +315,9 @@ Where N1-N8 are counts per variant, over PT and GT matrix entries for the same s
   most or all of a variant's carriers — up to and including the singleton
   case, N5 = every carrier, where the formula is literally undefined
   (denominator = 0) — the raw p1/p2 ratio becomes unreliable. `ancestry_split()`
-  applies **GLA shrinkage** by default to fix this; see below.
+  applies **shrinkage toward 1/2** to fix this; see below.
 
-#### GLA shrinkage: why an ambiguous-dominated variant needs outside evidence
+#### Shrinkage toward 1/2: why an ambiguous-dominated variant needs it
 
 The raw formula estimates a variant's ancestry split from its own
 unambiguous carriers, then applies that ratio to the ambiguous ones. That
@@ -341,15 +341,14 @@ carrier informing 2 total alt alleles" from "1 unambiguous carrier informing
 100 total" — it takes whatever ratio it computes at face value, regardless of
 how little evidence backs it.
 
-**GLA (global local ancestry) shrinkage** fixes this — and the pure
-singleton — with one mechanism: discount the raw ratio in proportion to how
-much of a variant's evidence is actually ambiguous, and fill in the rest from
-the chromosome arm's independently-estimated ancestry mixture (from RFMix's
-tracts, not this variant's genotypes):
+**Shrinkage toward 1/2** fixes this — and the pure singleton — with one
+mechanism: discount the raw ratio in proportion to how much of a variant's
+evidence is actually ambiguous, and fill in the rest with an even split:
 
 ```
 w  = N5 / total_alt   # ambiguous share of this variant's alt-allele confidence
-p1 = (1 - w) * p1_raw + w * GLA_AFR[arm]
+p1 = (1 - w) * p1_raw + w * 0.5
+p2 = 1 - p1
 ```
 
 `total_alt` is the same allele-weighted quantity computed above
@@ -361,20 +360,28 @@ a hom-alt carrier the same as a het one and under-count its evidence.
 
 For the example above, `w = 10/12 ≈ 0.83` — the near-total ambiguity is
 mostly (not fully — the hom-alt carrier's 2 alleles of evidence hold more
-weight than a het would) discounted. If this cohort's arm-level ancestry runs
-60% AFR / 40% EUR, GLA shrinkage gives `p1 = 0.50, p2 = 0.50` instead of the
-raw formula's `p1=0, p2=1` — a moderate, defensible estimate instead of a
+weight than a het would) discounted, giving `p1 = 5/12 ≈ 0.42, p2 ≈ 0.58`
+instead of the raw formula's `p1=0, p2=1` — a moderate estimate instead of a
 hard call backed by one data point. `w = 0` (unambiguous carriers dominate)
-leaves the raw formula untouched; `w = 1` (the pure singleton) falls back
-entirely to the arm's GLA proportion instead of a coin flip — the old
-special case is just one end of this same continuum, not a separate
-mechanism.
+leaves the raw formula untouched; `w = 1` (the pure singleton) gives exactly
+0.5/0.5 — the old special case is just one end of this same continuum, not a
+separate mechanism.
 
-`ancestry_split(mode = "dosage")` computes and applies this automatically.
-Pass `use_gla = FALSE` to disable it and reproduce the original raw-ratio /
-flat-0.5-singleton estimator exactly (or call
-`split_diploid()`/`split_diploid_multi()` directly with `gla = NULL`, the
-default, for the same effect at the matrix level). See
+**Why 1/2?** A mixed-ancestry heterozygote carries exactly one African and
+one European haplotype at the site, so which one holds the allele depends on
+how common the allele is on African versus European haplotypes — not on how
+many African haplotypes the cohort has. An earlier version shrank toward the
+chromosome arm's global local ancestry (GLA, ~0.82 AFR in the chr19 cohort),
+which pushed ambiguous alleles toward AFR. In chr19 simulations the true AFR
+share of mixed-het alleles was 0.50 at every allele count, and the 1/2 target
+both assigned alleles more accurately and gave more power when the causal
+effect was on European alleles.
+
+`ancestry_split(mode = "dosage")` always applies this. At the matrix level,
+`split_diploid()`/`split_diploid_multi()` take the target through their
+optional `gla` + `arm_id` arguments (a one-row matrix of 1/K with all-zero
+`arm_id` gives the same 1/2 shrinkage); leaving them `NULL` (the default)
+gives the raw ratio with only the flat 0.5 singleton fallback. See
 `vignette("split-intuition")` for a worked example and the K > 2
 generalisation.
 
@@ -397,30 +404,27 @@ generalises p1/p2 to K populations in two passes per variant:
    its parental origin is unknown, so it's split using the conditional ratio
    `p_i / (p_i + p_j)` — in proportion to how often *just those two*
    populations' alleles show up unambiguously elsewhere at this variant.
-   GLA shrinkage (see above) generalises **per pair**, not only as a fallback
-   for `p_i + p_j == 0` (the singleton case): it continuously discounts the
-   raw ratio by `w_ij` = (pair `(i,j)`'s own ambiguous-het count) / (this
-   variant's total allele-weighted confidence — every population's
-   unambiguous alt alleles, hom-alt carriers counted 2x, plus every mixed
-   pair's own ambiguous-het count, not just pair `(i,j)`'s), blending toward
-   the arm's GLA proportions renormalised to just this pair:
+   Shrinkage toward 1/2 (see above) generalises **per pair**, not only as a
+   fallback for `p_i + p_j == 0` (the singleton case): it continuously
+   discounts the raw ratio by `w_ij` = (pair `(i,j)`'s own ambiguous-het
+   count) / (this variant's total allele-weighted confidence — every
+   population's unambiguous alt alleles, hom-alt carriers counted 2x, plus
+   every mixed pair's own ambiguous-het count, not just pair `(i,j)`'s),
+   blending toward an even split within the pair:
 
    ```
-   p_i/(p_i+p_j)  <-  (1 - w_ij) * p_i/(p_i+p_j) + w_ij * GLA_i[arm] / (GLA_i[arm] + GLA_j[arm])
+   p_i/(p_i+p_j)  <-  (1 - w_ij) * p_i/(p_i+p_j) + w_ij * 0.5
    ```
 
-   Renormalising to the pair (instead of blending each population's raw
-   `GLA_k[arm]` in directly) is what guarantees an ambiguous AFR/EUR het is
-   never assigned any dosage toward a third population like NAT, no matter
-   how strongly shrinkage applies — only AFR and EUR ever receive a share.
+   The blend stays inside the pair, so an ambiguous AFR/EUR het is never
+   assigned any dosage toward a third population like NAT, no matter how
+   strongly shrinkage applies — only AFR and EUR ever receive a share.
    `w_ij = 0` leaves the raw ratio untouched; `w_ij = 1` (pair `(i,j)`'s only
-   alt carriers are its own ambiguous hets) falls back entirely to the
-   pair-conditioned GLA ratio instead of a flat 0.5/0.5 — same continuum as
-   the two-population case, applied independently per pair.
+   alt carriers are its own ambiguous hets) gives exactly 0.5/0.5 — same
+   continuum as the two-population case, applied independently per pair.
 
-With K=2 there's only one mixed code and one pair, and `GLA_AFR[arm] +
-GLA_EUR[arm] = 1` by construction, so the pair-conditioned target collapses
-to plain `GLA_AFR[arm]` and this reduces exactly to the p1/p2 formulas above.
+With K=2 there's only one mixed code and one pair, so this reduces exactly
+to the p1/p2 formulas above.
 
 ### Phased Split
 

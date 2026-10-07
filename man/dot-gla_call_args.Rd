@@ -7,7 +7,7 @@
 .gla_call_args(gla, arm_id)
 }
 \description{
-\code{gla = NULL} (either argument NULL) disables GLA shrinkage: an empty
+\code{gla = NULL} (either argument NULL) disables shrinkage: an empty
 matrix/vector signal the C side to reproduce the pre-shrinkage behavior
 exactly (see \code{ancestry.c}).
 }
