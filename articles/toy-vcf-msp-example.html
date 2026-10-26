@@ -37,7 +37,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -105,28 +105,33 @@ more populations)</h1>
 <div class="section level3">
 <h3 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h3>
-<p><code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> (Step 1) is LANTERN’s entry point once
-you have a phased VCF and an RFMix MSP file: it parses both, intersects
-samples, maps variants to ancestry tracts, and runs either split via a
-single <code>mode</code> argument (<code>"haplotype"</code> or
-<code>"dosage"</code>) — see <code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code>
-for what each mode computes on the underlying matrices.</p>
-<p>Population count and names come directly from the MSP header, so the
-same call works unchanged for K = 2 or K &gt; 2. Part A builds a
-two-population toy VCF + MSP; Part B does the same for four
-populations.</p>
+<p><code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> takes two files: a phased VCF with the
+genotypes and an RFMix <code>.msp.tsv</code> file with the local
+ancestry. This vignette builds both files by hand for a tiny example,
+small enough that every number in the output can be checked against the
+input. Part A uses two populations. Part B uses four, to show that
+nothing about the call changes when there are more populations.</p>
+<p><code><a href="../articles/lantern.html">vignette("lantern")</a></code> runs the full analysis on a larger
+simulated dataset, and <code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> explains
+the arithmetic of the split.</p>
 <hr>
 </div>
 <div class="section level2">
 <h2 id="part-a-two-populations">Part A: Two populations<a class="anchor" aria-label="anchor" href="#part-a-two-populations"></a>
 </h2>
+<div class="section level3">
+<h3 id="the-input-files">The input files<a class="anchor" aria-label="anchor" href="#the-input-files"></a>
+</h3>
+<p>We write the files to a temporary directory. The VCF has three
+variants and three samples (S1, S2, S3). The genotypes are phased: in
+<code>0|1</code> the first number is the allele on the first copy of the
+chromosome (haplotype 0) and the second number the allele on the second
+copy (haplotype 1).</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">tmp_dir</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.create</a></span><span class="op">(</span><span class="va">tmp_dir</span><span class="op">)</span></span>
 <span><span class="va">vcf_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir</span>, <span class="st">"phased.vcf"</span><span class="op">)</span></span>
-<span><span class="va">msp_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir</span>, <span class="st">"ancestry.msp.tsv"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3 variants × 3 samples, phased GTs</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"##fileformat=VCFv4.1"</span>,</span>
 <span>  <span class="st">'##FORMAT=&lt;ID=GT,Number=1,Type=String,Description="Genotype"&gt;'</span>,</span>
@@ -135,11 +140,42 @@ populations.</p>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>,<span class="st">"1100"</span>,<span class="st">"."</span>,<span class="st">"A"</span>,<span class="st">"G"</span>,<span class="st">"100"</span>,<span class="st">"PASS"</span>,<span class="st">"."</span>,<span class="st">"GT"</span>,<span class="st">"0|1"</span>,<span class="st">"1|0"</span>,<span class="st">"0|0"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>,<span class="st">"1200"</span>,<span class="st">"."</span>,<span class="st">"C"</span>,<span class="st">"T"</span>,<span class="st">"100"</span>,<span class="st">"PASS"</span>,<span class="st">"."</span>,<span class="st">"GT"</span>,<span class="st">"1|1"</span>,<span class="st">"0|1"</span>,<span class="st">"1|0"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>,<span class="st">"2100"</span>,<span class="st">"."</span>,<span class="st">"G"</span>,<span class="st">"A"</span>,<span class="st">"100"</span>,<span class="st">"PASS"</span>,<span class="st">"."</span>,<span class="st">"GT"</span>,<span class="st">"0|0"</span>,<span class="st">"1|0"</span>,<span class="st">"0|1"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span></span>
-<span><span class="op">)</span>, <span class="va">vcf_path</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># RFMix MSP: 2 ancestry tracts, pop codes AFR=0 EUR=1</span></span>
-<span><span class="co">#   tract 1 [1000,2000): S1=AFR|EUR  S2=EUR|AFR  S3=AFR|EUR</span></span>
-<span><span class="co">#   tract 2 [2000,3000): S1=EUR|AFR  S2=AFR|EUR  S3=EUR|AFR</span></span>
+<span><span class="op">)</span>, <span class="va">vcf_path</span><span class="op">)</span></span></code></pre></div>
+<p>The MSP file divides the chromosome into segments (tracts) and gives,
+for each sample and haplotype, the population that segment came from.
+Its first line maps population names to the codes used in the file (AFR
+= 0, EUR = 1). The ancestry columns are named
+<code>&lt;sample&gt;.0</code> and <code>&lt;sample&gt;.1</code> for the
+two haplotypes. Our file has two tracts:</p>
+<table class="table">
+<thead><tr class="header">
+<th>Tract</th>
+<th>Positions</th>
+<th>S1 (hap 0, hap 1)</th>
+<th>S2</th>
+<th>S3</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>1000 - 2000</td>
+<td>AFR, EUR</td>
+<td>EUR, AFR</td>
+<td>AFR, EUR</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>2000 - 3000</td>
+<td>EUR, AFR</td>
+<td>AFR, EUR</td>
+<td>EUR, AFR</td>
+</tr>
+</tbody>
+</table>
+<p>Variants at positions 1100 and 1200 fall in tract 1, and the variant
+at 2100 in tract 2.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">msp_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir</span>, <span class="st">"ancestry.msp.tsv"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#Subpopulation order/codes: AFR=0"</span>, <span class="st">"EUR=1"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#chm"</span>,<span class="st">"spos"</span>,<span class="st">"epos"</span>,<span class="st">"sgpos"</span>,<span class="st">"egpos"</span>,<span class="st">"n snps"</span>,</span>
@@ -147,159 +183,183 @@ populations.</p>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>,<span class="st">"1000"</span>,<span class="st">"2000"</span>,<span class="st">"0.0"</span>,<span class="st">"0.1"</span>,<span class="st">"2"</span>,<span class="st">"0"</span>,<span class="st">"1"</span>,<span class="st">"1"</span>,<span class="st">"0"</span>,<span class="st">"0"</span>,<span class="st">"1"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>,<span class="st">"2000"</span>,<span class="st">"3000"</span>,<span class="st">"0.1"</span>,<span class="st">"0.2"</span>,<span class="st">"1"</span>,<span class="st">"1"</span>,<span class="st">"0"</span>,<span class="st">"0"</span>,<span class="st">"1"</span>,<span class="st">"1"</span>,<span class="st">"0"</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span></span>
 <span><span class="op">)</span>, <span class="va">msp_path</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">phased</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"haplotype"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="va">unphased</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"dosage"</span>,    verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">pop_names</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">phased</span><span class="op">)</span>,</span>
-<span>                     <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"variant_info"</span>, <span class="st">"sample_ids"</span>, <span class="st">"mode"</span>,</span>
-<span>                       <span class="st">"ancestry_counts"</span>, <span class="st">"tract_info"</span>, <span class="st">"overlap"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Populations:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">pop_names</span>, collapse <span class="op">=</span> <span class="st">", "</span><span class="op">)</span>, <span class="st">"\n\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Populations: AFR, EUR</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"=== phased (mode = \"haplotype\") ===\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; === phased (mode = "haplotype") ===</span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">p</span> <span class="kw">in</span> <span class="va">pop_names</span><span class="op">)</span> <span class="op">{</span> <span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="va">p</span>, <span class="st">"dosage:\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">phased</span><span class="op">[[</span><span class="va">p</span><span class="op">]</span><span class="op">]</span><span class="op">)</span> <span class="op">}</span></span>
-<span><span class="co">#&gt; AFR dosage:</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
-<span><span class="co">#&gt; [1,]    0    0    0</span></span>
-<span><span class="co">#&gt; [2,]    1    1    1</span></span>
-<span><span class="co">#&gt; [3,]    0    1    1</span></span>
-<span><span class="co">#&gt; EUR dosage:</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
-<span><span class="co">#&gt; [1,]    1    1    0</span></span>
-<span><span class="co">#&gt; [2,]    1    0    0</span></span>
-<span><span class="co">#&gt; [3,]    0    0    0</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\n=== unphased (mode = \"dosage\") ===\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; === unphased (mode = "dosage") ===</span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">p</span> <span class="kw">in</span> <span class="va">pop_names</span><span class="op">)</span> <span class="op">{</span> <span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="va">p</span>, <span class="st">"dosage:\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">unphased</span><span class="op">[[</span><span class="va">p</span><span class="op">]</span><span class="op">]</span><span class="op">)</span> <span class="op">}</span></span>
-<span><span class="co">#&gt; AFR dosage:</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
-<span><span class="co">#&gt; [1,]  0.5  0.5  0.0</span></span>
-<span><span class="co">#&gt; [2,]  1.0  0.5  0.5</span></span>
-<span><span class="co">#&gt; [3,]  0.0  0.5  0.5</span></span>
-<span><span class="co">#&gt; EUR dosage:</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
-<span><span class="co">#&gt; [1,]  0.5  0.5  0.0</span></span>
-<span><span class="co">#&gt; [2,]  1.0  0.5  0.5</span></span>
-<span><span class="co">#&gt; [3,]  0.0  0.5  0.5</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\nVariants kept:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">variant_info</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Variants kept: 3</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Samples:      "</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">sample_ids</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Samples:       3</span></span>
-<span></span>
-<span><span class="co"># Sanity check: phased AFR + EUR reconstructs the raw diploid genotype exactly</span></span>
-<span><span class="va">vcf_lines</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readLines.html" class="external-link">readLines</a></span><span class="op">(</span><span class="va">vcf_path</span><span class="op">)</span><span class="op">[</span><span class="op">-</span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="va">raw</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">rbind</span>, <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">vcf_lines</span>, <span class="kw">function</span><span class="op">(</span><span class="va">l</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">gts</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/strsplit.html" class="external-link">strsplit</a></span><span class="op">(</span><span class="va">l</span>, <span class="st">"\t"</span><span class="op">)</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">[</span><span class="fl">10</span><span class="op">:</span><span class="fl">12</span><span class="op">]</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">gts</span>, <span class="kw">function</span><span class="op">(</span><span class="va">g</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/strsplit.html" class="external-link">strsplit</a></span><span class="op">(</span><span class="va">g</span>, <span class="st">"|"</span>, fixed <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">max_err</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">phased</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span> <span class="op">-</span> <span class="va">raw</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Max phased reconstruction error (must be 0):"</span>, <span class="va">max_err</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Max phased reconstruction error (must be 0): 0</span></span></code></pre></div>
-<p>Each call returns a named list: one dosage matrix per population
-(named from the MSP header) plus <code>variant_info</code>,
-<code>sample_ids</code>, <code>mode</code>,
-<code>ancestry_counts</code>, and <code>overlap</code>. Need both splits
-on a large cohort routinely? Cache each result (e.g. to RDS) rather than
-re-parsing the VCF/MSP on every run — <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>
-always re-parses from scratch.</p>
-<p>The backward-compatible <code><a href="../reference/ancestry_split_dosage.html">ancestry_split_dosage()</a></code> (matrix
-or VCF/MSP input) and <code><a href="../reference/ancestry_split_phased.html">ancestry_split_phased()</a></code> (VCF/MSP
-input, optionally also writing GDS) wrap the same logic for existing
-code — see <code><a href="../reference/ancestry_split_dosage.html">?ancestry_split_dosage</a></code> and
-<code><a href="../reference/ancestry_split_phased.html">?ancestry_split_phased</a></code>.</p>
+</div>
+<div class="section level3">
+<h3 id="splitting-with-phase-mode-haplotype">Splitting with phase (<code>mode = "haplotype"</code>)<a class="anchor" aria-label="anchor" href="#splitting-with-phase-mode-haplotype"></a>
+</h3>
+<p>Because the genotypes are phased, we know which haplotype carries
+each allele, and the MSP file tells us that haplotype’s population. Each
+allele is simply counted for that population.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">phased</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"haplotype"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">phased</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "AFR"             "EUR"             "variant_info"    "sample_ids"     </span></span>
+<span><span class="co">#&gt; [5] "mode"            "ancestry_counts" "tract_info"      "overlap"</span></span></code></pre></div>
+<p>The result holds one dosage matrix per population, named from the MSP
+header (<code>AFR</code>, <code>EUR</code>), plus information about the
+variants and samples. The matrices have one row per variant and one
+column per sample. To make them easier to read we label them with
+positions and sample IDs:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">label</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">m</span>, <span class="va">split</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/dimnames.html" class="external-link">dimnames</a></span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">split</span><span class="op">$</span><span class="va">variant_info</span><span class="op">$</span><span class="va">pos</span>, <span class="va">split</span><span class="op">$</span><span class="va">sample_ids</span><span class="op">)</span></span>
+<span>  <span class="va">m</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu">label</span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">AFR</span>, <span class="va">phased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      S1 S2 S3</span></span>
+<span><span class="co">#&gt; 1100  0  0  0</span></span>
+<span><span class="co">#&gt; 1200  1  1  1</span></span>
+<span><span class="co">#&gt; 2100  0  1  1</span></span>
+<span><span class="fu">label</span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">EUR</span>, <span class="va">phased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      S1 S2 S3</span></span>
+<span><span class="co">#&gt; 1100  1  1  0</span></span>
+<span><span class="co">#&gt; 1200  1  0  0</span></span>
+<span><span class="co">#&gt; 2100  0  0  0</span></span></code></pre></div>
+<p>Take S1 at position 1100. Its genotype is <code>0|1</code>, so the
+alternate allele is on haplotype 1. In tract 1, S1’s haplotype 1 is
+European, so the allele counts as 1 European dosage and 0 African. At
+position 1200, S1 is <code>1|1</code> with one African and one European
+haplotype, giving 1 African and 1 European. Adding the two matrices
+gives back each sample’s genotype (its total number of alternate
+alleles):</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">label</span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">phased</span><span class="op">$</span><span class="va">EUR</span>, <span class="va">phased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      S1 S2 S3</span></span>
+<span><span class="co">#&gt; 1100  1  1  0</span></span>
+<span><span class="co">#&gt; 1200  2  1  1</span></span>
+<span><span class="co">#&gt; 2100  0  1  1</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="splitting-without-phase-mode-dosage">Splitting without phase (<code>mode = "dosage"</code>)<a class="anchor" aria-label="anchor" href="#splitting-without-phase-mode-dosage"></a>
+</h3>
+<p>Often phase is unreliable for rare variants, or we prefer not to rely
+on it. <code>mode = "dosage"</code> uses only the unphased genotype (0,
+1 or 2) and each sample’s pair of ancestries in the tract.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">unphased</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"dosage"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu">label</span><span class="op">(</span><span class="va">unphased</span><span class="op">$</span><span class="va">AFR</span>, <span class="va">unphased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       S1  S2  S3</span></span>
+<span><span class="co">#&gt; 1100 0.5 0.5 0.0</span></span>
+<span><span class="co">#&gt; 1200 1.0 0.5 0.5</span></span>
+<span><span class="co">#&gt; 2100 0.0 0.5 0.5</span></span>
+<span><span class="fu">label</span><span class="op">(</span><span class="va">unphased</span><span class="op">$</span><span class="va">EUR</span>, <span class="va">unphased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       S1  S2  S3</span></span>
+<span><span class="co">#&gt; 1100 0.5 0.5 0.0</span></span>
+<span><span class="co">#&gt; 1200 1.0 0.5 0.5</span></span>
+<span><span class="co">#&gt; 2100 0.0 0.5 0.5</span></span></code></pre></div>
+<p>Every sample in this example has one African and one European
+haplotype in both tracts, so every heterozygote is ambiguous: the
+genotype does not say which haplotype carries the allele. Homozygotes
+are not ambiguous. S1 at 1200 has two alternate alleles, one on each
+haplotype, so it again gets 1 African and 1 European. An ambiguous
+heterozygote’s allele is shared between its two populations. The shares
+are estimated from the carriers of the same variant whose ancestry is
+unambiguous, and pulled toward 1/2 the less such evidence there is. Here
+no carrier of a single allele is unambiguous, so every ambiguous allele
+is split exactly in half. <code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> shows
+the calculation for less extreme cases. The total is still each sample’s
+genotype:</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">label</span><span class="op">(</span><span class="va">unphased</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">unphased</span><span class="op">$</span><span class="va">EUR</span>, <span class="va">unphased</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      S1 S2 S3</span></span>
+<span><span class="co">#&gt; 1100  1  1  0</span></span>
+<span><span class="co">#&gt; 1200  2  1  1</span></span>
+<span><span class="co">#&gt; 2100  0  1  1</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="related-functions">Related functions<a class="anchor" aria-label="anchor" href="#related-functions"></a>
+</h3>
+<p><code><a href="../reference/ancestry_split_dosage.html">ancestry_split_dosage()</a></code> and
+<code><a href="../reference/ancestry_split_phased.html">ancestry_split_phased()</a></code> are older interfaces to the same
+split, kept so existing code keeps working. New code should use
+<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>. <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> reads both
+files every time it is called, so for a large cohort it is worth saving
+the result (for example with <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code>) if you need it more
+than once.</p>
 <hr>
+</div>
 </div>
 <div class="section level2">
 <h2 id="part-b-more-than-two-populations-k-4">Part B: More than two populations (K = 4)<a class="anchor" aria-label="anchor" href="#part-b-more-than-two-populations-k-4"></a>
 </h2>
-<p>Nothing about the call changes — same function, same
-<code>mode</code> argument, same return shape, just more populations
-declared in the MSP header.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">tmp_dir4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.create</a></span><span class="op">(</span><span class="va">tmp_dir4</span><span class="op">)</span></span>
-<span><span class="va">vcf4_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir4</span>, <span class="st">"phased4.vcf"</span><span class="op">)</span></span>
-<span><span class="va">msp4_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir4</span>, <span class="st">"ancestry4.msp.tsv"</span><span class="op">)</span></span>
+<p>Some admixed groups, such as many Hispanic/Latino populations, have
+ancestry from three or more populations. The population names and codes
+come from the MSP header, so the same call handles any number of
+populations. Here we simulate 24 samples, ten rare variants and a single
+tract in which each haplotype is randomly AFR, EUR, NAT or EAS.</p>
+<p>First, the VCF, with random phased genotypes:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">99</span><span class="op">)</span></span>
+<span><span class="va">samples4</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">24</span><span class="op">)</span></span>
+<span><span class="va">vcf4_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir</span>, <span class="st">"phased4.vcf"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">99</span><span class="op">)</span></span>
-<span><span class="va">n_samp_k4</span> <span class="op">&lt;-</span> <span class="fl">24</span></span>
-<span><span class="va">samp_k4</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_samp_k4</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 10 variants, phased GT, mostly rare</span></span>
-<span><span class="va">gt_lines</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fl">10</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">i</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">gts</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"0|0"</span>,<span class="st">"0|1"</span>,<span class="st">"1|0"</span>,<span class="st">"1|1"</span><span class="op">)</span>, <span class="va">n_samp_k4</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span><span class="va">gt_lines</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">10</span>, <span class="kw">function</span><span class="op">(</span><span class="va">i</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">gts</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"0|0"</span>, <span class="st">"0|1"</span>, <span class="st">"1|0"</span>, <span class="st">"1|1"</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">samples4</span><span class="op">)</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>                prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.85</span>, <span class="fl">0.06</span>, <span class="fl">0.06</span>, <span class="fl">0.03</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>, <span class="fl">1000L</span> <span class="op">+</span> <span class="va">i</span> <span class="op">*</span> <span class="fl">100L</span>, <span class="st">"."</span>, <span class="st">"A"</span>, <span class="st">"T"</span>, <span class="st">"100"</span>, <span class="st">"PASS"</span>, <span class="st">"."</span>, <span class="st">"GT"</span>, <span class="va">gts</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>, <span class="fl">1000</span> <span class="op">+</span> <span class="va">i</span> <span class="op">*</span> <span class="fl">100</span>, <span class="st">"."</span>, <span class="st">"A"</span>, <span class="st">"T"</span>, <span class="st">"100"</span>, <span class="st">"PASS"</span>, <span class="st">"."</span>, <span class="st">"GT"</span>, <span class="va">gts</span><span class="op">)</span>,</span>
 <span>        collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span></span>
 <span><span class="op">}</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"##fileformat=VCFv4.1"</span>,</span>
 <span>  <span class="st">'##FORMAT=&lt;ID=GT,Number=1,Type=String,Description="Genotype"&gt;'</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#CHROM"</span>,<span class="st">"POS"</span>,<span class="st">"ID"</span>,<span class="st">"REF"</span>,<span class="st">"ALT"</span>,<span class="st">"QUAL"</span>,<span class="st">"FILTER"</span>,<span class="st">"INFO"</span>,<span class="st">"FORMAT"</span>, <span class="va">samp_k4</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#CHROM"</span>,<span class="st">"POS"</span>,<span class="st">"ID"</span>,<span class="st">"REF"</span>,<span class="st">"ALT"</span>,<span class="st">"QUAL"</span>,<span class="st">"FILTER"</span>,<span class="st">"INFO"</span>,<span class="st">"FORMAT"</span>, <span class="va">samples4</span><span class="op">)</span>,</span>
 <span>        collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="va">gt_lines</span></span>
-<span><span class="op">)</span>, <span class="va">vcf4_path</span><span class="op">)</span></span>
+<span><span class="op">)</span>, <span class="va">vcf4_path</span><span class="op">)</span></span></code></pre></div>
+<p>Then the MSP file. The header now declares four populations, and the
+single tract (positions 1000 to 3000) holds one random population code
+per haplotype:</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">msp4_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">tmp_dir</span>, <span class="st">"ancestry4.msp.tsv"</span><span class="op">)</span></span>
+<span><span class="va">hap_cols</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="va">samples4</span>, each <span class="op">=</span> <span class="fl">2</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">".0"</span>, <span class="st">".1"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">hap_anc</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">3</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">hap_cols</span><span class="op">)</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Single tract spanning all variants; each sample gets a random pair of</span></span>
-<span><span class="co"># the four ancestries per haplotype</span></span>
-<span><span class="va">pop_codes_k4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">0L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">2L</span>, EAS <span class="op">=</span> <span class="fl">3L</span><span class="op">)</span></span>
-<span><span class="va">hap_cols</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">samp_k4</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="va">s</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">".0"</span>, <span class="st">".1"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">hap_anc</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">pop_codes_k4</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">hap_cols</span><span class="op">)</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#Subpopulation order/codes: AFR=0"</span>, <span class="st">"EUR=1"</span>, <span class="st">"NAT=2"</span>, <span class="st">"EAS=3"</span><span class="op">)</span>,</span>
 <span>        collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#chm"</span>,<span class="st">"spos"</span>,<span class="st">"epos"</span>,<span class="st">"sgpos"</span>,<span class="st">"egpos"</span>,<span class="st">"n snps"</span>, <span class="va">hap_cols</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"19"</span>, <span class="st">"1000"</span>, <span class="st">"3000"</span>, <span class="st">"0.0"</span>, <span class="st">"0.5"</span>, <span class="st">"10"</span>, <span class="va">hap_anc</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">"\t"</span><span class="op">)</span></span>
 <span><span class="op">)</span>, <span class="va">msp4_path</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<p>The call is the same as in Part A:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">phased4</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf4_path</span>, <span class="va">msp4_path</span>, mode <span class="op">=</span> <span class="st">"haplotype"</span>,</span>
-<span>                             chrom <span class="op">=</span> <span class="st">"19"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span>                            chrom <span class="op">=</span> <span class="st">"19"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="va">unphased4</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf4_path</span>, <span class="va">msp4_path</span>, mode <span class="op">=</span> <span class="st">"dosage"</span>,</span>
-<span>                             chrom <span class="op">=</span> <span class="st">"19"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">pop4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">)</span>,</span>
-<span>                <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"variant_info"</span>, <span class="st">"sample_ids"</span>, <span class="st">"mode"</span>,</span>
-<span>                  <span class="st">"ancestry_counts"</span>, <span class="st">"tract_info"</span>, <span class="st">"overlap"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Populations recovered from the MSP header:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">pop4</span>, collapse <span class="op">=</span> <span class="st">", "</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Populations recovered from the MSP header: AFR, EUR, NAT, EAS</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Variants kept:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">$</span><span class="va">variant_info</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Variants kept: 9</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"ancestry_counts columns:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">$</span><span class="va">ancestry_counts</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">", "</span><span class="op">)</span>, <span class="st">"\n\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; ancestry_counts columns: AFR, EUR, NAT, EAS</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"=== phased AFR (first 3 variants) ===\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="op">]</span><span class="op">)</span></span>
-<span><span class="co">#&gt; === phased AFR (first 3 variants) ===</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10] [,11] [,12] [,13] [,14]</span></span>
-<span><span class="co">#&gt; [1,]    0    0    0    0    0    0    0    0    0     0     0     0     0     0</span></span>
-<span><span class="co">#&gt; [2,]    0    0    0    0    0    0    0    0    0     0     0     0     0     0</span></span>
-<span><span class="co">#&gt; [3,]    0    0    0    0    0    0    0    0    0     0     0     0     0     0</span></span>
-<span><span class="co">#&gt;      [,15] [,16] [,17] [,18] [,19] [,20] [,21] [,22] [,23] [,24]</span></span>
-<span><span class="co">#&gt; [1,]     0     0     0     0     0     0     0     0     0     0</span></span>
-<span><span class="co">#&gt; [2,]     0     1     0     0     0     0     0     1     0     0</span></span>
-<span><span class="co">#&gt; [3,]     0     0     0     0     0     0     0     0     0     0</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"=== unphased AFR (first 3 variants) ===\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">unphased4</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="op">]</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; === unphased AFR (first 3 variants) ===</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10] [,11] [,12] [,13] [,14]</span></span>
-<span><span class="co">#&gt; [1,]    0    0    0    0    0    0    0    0    0     0  0.00     0     0     0</span></span>
-<span><span class="co">#&gt; [2,]    0    0    0    0    0    0    0    0    0     0  0.00     0     0     0</span></span>
-<span><span class="co">#&gt; [3,]    0    0    0    0    0    0    0    0    0     0  0.37     0     0     0</span></span>
-<span><span class="co">#&gt;      [,15] [,16] [,17] [,18] [,19] [,20] [,21] [,22] [,23] [,24]</span></span>
-<span><span class="co">#&gt; [1,]     0     0     0     0     0  0.00     0  0.00     0     0</span></span>
-<span><span class="co">#&gt; [2,]     0     1     0     0     0  0.86     0  0.88     0     0</span></span>
-<span><span class="co">#&gt; [3,]     0     0     0     0     0  0.05     0  0.00     0     0</span></span></code></pre></div>
-<p>Next: <code><a href="../articles/real-data-chr19.html">vignette("real-data-chr19")</a></code> takes a split result
-like this one through <code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code> (Step 2) and
-<code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> (Step 3) on real genotype data.</p>
+<span>                            chrom <span class="op">=</span> <span class="st">"19"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<p>There is now one dosage matrix per population, and
+<code>ancestry_counts</code>, the number of samples with both haplotypes
+from each population at each variant, has four columns:</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">]</span></span>
+<span><span class="co">#&gt; [1] "AFR" "EUR" "NAT" "EAS"</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">$</span><span class="va">ancestry_counts</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      AFR EUR NAT EAS</span></span>
+<span><span class="co">#&gt; [1,]   0   3   1   1</span></span>
+<span><span class="co">#&gt; [2,]   0   3   1   1</span></span>
+<span><span class="co">#&gt; [3,]   0   3   1   1</span></span></code></pre></div>
+<p>As before, the phased split assigns whole alleles, and the unphased
+split shares an ambiguous allele between the two populations of that
+sample’s haplotypes. Here is the first sample and variant where the
+unphased split gives a fraction, with its dosage in each of the four
+populations under both modes:</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">i</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/which.html" class="external-link">which</a></span><span class="op">(</span><span class="va">unphased4</span><span class="op">$</span><span class="va">AFR</span> <span class="op"><a href="https://rdrr.io/r/base/Arithmetic.html" class="external-link">%%</a></span> <span class="fl">1</span> <span class="op">&gt;</span> <span class="fl">0</span>, arr.ind <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>variant <span class="op">=</span> <span class="va">phased4</span><span class="op">$</span><span class="va">variant_info</span><span class="op">$</span><span class="va">pos</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, sample <span class="op">=</span> <span class="va">phased4</span><span class="op">$</span><span class="va">sample_ids</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt; variant  sample </span></span>
+<span><span class="co">#&gt;  "1300"   "S11"</span></span>
+<span><span class="va">pops</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"EUR"</span>, <span class="st">"NAT"</span>, <span class="st">"EAS"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>haplotype <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">phased4</span><span class="op">[</span><span class="va">pops</span><span class="op">]</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="va">i</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>      dosage    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">unphased4</span><span class="op">[</span><span class="va">pops</span><span class="op">]</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="va">i</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;           AFR EUR NAT EAS</span></span>
+<span><span class="co">#&gt; haplotype 0.0   0   0 1.0</span></span>
+<span><span class="co">#&gt; dosage    0.5   0   0 0.5</span></span></code></pre></div>
+<p>In haplotype mode the allele goes entirely to one population. In
+dosage mode it is shared between the two populations of the sample’s
+haplotypes, and the other two populations get 0.</p>
 <div class="section level3">
 <h3 id="session-information">Session information<a class="anchor" aria-label="anchor" href="#session-information"></a>
 </h3>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
 <span><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
@@ -322,11 +382,11 @@ like this one through <code><a href="../reference/write_ancestry_gds.html">write
 <span><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; other attached packages:</span></span>
-<span><span class="co">#&gt; [1] lantern_0.99.0</span></span>
+<span><span class="co">#&gt; [1] lantern_0.99.1</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span><span class="co">#&gt;  [1] digest_0.6.39       desc_1.4.3          R6_2.6.1           </span></span>
-<span><span class="co">#&gt;  [4] fastmap_1.2.0       xfun_0.61           cachem_1.1.0       </span></span>
+<span><span class="co">#&gt;  [4] fastmap_1.2.0       xfun_0.62           cachem_1.1.0       </span></span>
 <span><span class="co">#&gt;  [7] knitr_1.52          htmltools_0.5.9     rmarkdown_2.32     </span></span>
 <span><span class="co">#&gt; [10] lifecycle_1.0.5     cli_3.6.6           sass_0.4.10        </span></span>
 <span><span class="co">#&gt; [13] pkgdown_2.2.1       data.table_1.18.6.1 textshaping_1.0.5  </span></span>

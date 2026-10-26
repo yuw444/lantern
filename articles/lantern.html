@@ -37,7 +37,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -109,27 +109,94 @@ Auer</h4>
 <div class="section level2">
 <h2 id="introduction">Introduction<a class="anchor" aria-label="anchor" href="#introduction"></a>
 </h2>
-<p>In admixed individuals, each stretch of the genome is inherited from
-one of several ancestral populations. A rare-variant burden test that
-pools all carriers can miss an effect that exists in only one ancestral
-background, or wrongly attribute one. <strong>lantern</strong> uses
-local ancestry to split each sample’s alternate-allele dosage into
-per-ancestry dosages (e.g. African and European). It then runs
-gene-level <code>SMMAT</code> tests (<a href="https://cran.r-project.org/package=GMMAT" class="external-link">GMMAT</a>) separately
-for each ancestry and combines the per-ancestry p-values with the Cauchy
-combination test.</p>
-<p>The workflow has three steps:</p>
+<p>People with recent ancestry from more than one population, such as
+African Americans, are called admixed. Along each of their chromosomes,
+some segments were inherited from African ancestors and others from
+European ancestors. Software such as RFMix can infer, for every segment
+and each of the two copies of a chromosome, which population it came
+from. This is called local ancestry.</p>
+<p>Rare-variant association tests usually group the rare variants in a
+gene and test whether carrying them is associated with a trait. If a
+variant’s effect depends on the genetic background it sits on, for
+example because it is tagged by different nearby variants in African and
+European haplotypes, pooling all carriers mixes carriers with and
+without the effect, and the test loses power.</p>
+<p>lantern uses local ancestry to split each person’s count of alternate
+alleles (their dosage, 0, 1 or 2) into one dosage per ancestry. A
+heterozygote whose allele sits on an African haplotype contributes 1 to
+the African dosage and 0 to the European dosage. lantern then runs the
+gene-based SMMAT test from the GMMAT package separately for each
+ancestry, and combines the per-ancestry p-values for each gene into one
+p-value with the Cauchy combination test.</p>
+<div class="section level3">
+<h3 id="which-haplotype-carries-the-rare-allele">Which haplotype carries the rare allele?<a class="anchor" aria-label="anchor" href="#which-haplotype-carries-the-rare-allele"></a>
+</h3>
+<p>For most carriers the split is clear. If both copies of the
+chromosome are African at the variant (person A below), the allele is
+African; if both are European (person B), it is European. The hard case
+is a heterozygote with one African and one European copy (person C): the
+allele is on one of the two, and only phase, the assignment of each
+allele to a chromosome copy, says which.</p>
+<div class="float">
+<img src="figures/haplotype-ambiguity.svg" style="width:100.0%" alt="Local ancestry at a rare variant in three people. Only person C, with one African and one European haplotype, needs phase to tell which ancestry the allele belongs to."><div class="figcaption">Local ancestry at a rare variant in three
+people. Only person C, with one African and one European haplotype,
+needs phase to tell which ancestry the allele belongs to.</div>
+</div>
+<p>Phasing is least reliable for exactly the variants that rare-variant
+tests use. In the UK Biobank, SHAPEIT5 places a singleton allele on the
+wrong haplotype about one time in three:</p>
+<div class="float">
+<img src="figures/switch-error.svg" style="width:100.0%" alt="SHAPEIT5 switch-error rate by minor allele count in the UK Biobank (Hofmeister et al. 2023)."><div class="figcaption">SHAPEIT5 switch-error rate by minor allele count
+in the UK Biobank (Hofmeister et al. 2023).</div>
+</div>
+<p>lantern therefore offers two ways to split.
+<code>mode = "haplotype"</code> uses the phased genotypes, like Tractor
+does for common variants. <code>mode = "dosage"</code> does not use
+phase: it shares each ambiguous heterozygote’s allele between the two
+ancestries, with shares estimated from the variant’s other carriers
+(<code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> explains how).</p>
+</div>
+<div class="section level3">
+<h3 id="what-the-split-gains">What the split gains<a class="anchor" aria-label="anchor" href="#what-the-split-gains"></a>
+</h3>
+<p>We simulated traits on chromosome 19 of 3,313 participants of the
+Jackson Heart Study, about 80% of whose ancestry is African, with causal
+effects carried by alleles on African haplotypes, on European
+haplotypes, or on both. The ancestry-split tests did not inflate the
+type I error, down to a significance level of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2.5</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>6</mn></mrow></msup></mrow><annotation encoding="application/x-tex">2.5 \times 10^{-6}</annotation></semantics></math>.
+When the effect was carried on the European (here the minority-ancestry)
+haplotypes, testing the European dosage had about twice the power of
+SMMAT on unsplit genotypes, and the unphased split about 1.5 times. When
+the effect was on African haplotypes or on both, the African-ancestry
+test lost almost nothing against SMMAT.</p>
+<div class="float">
+<img src="figures/power.svg" style="width:100.0%" alt='Power at a significance level of 0.05 by mean effect size, averaged over 100 genes (Wang et al. 2026). AF, EU: tests of the African and European dosages; Phased, Unphased: mode = "haplotype" and mode = "dosage".'><div class="figcaption">Power at a significance level of 0.05 by mean
+effect size, averaged over 100 genes (Wang et al. 2026). AF, EU: tests
+of the African and European dosages; Phased, Unphased:
+<code>mode = "haplotype"</code> and <code>mode = "dosage"</code>.</div>
+</div>
+<p>The details are in the preprint: Wang Y, Tuftin B, Raffield LM,
+Hidalgo B, Kerns SL, DeWan AT, Leal SM, Auer PL (2026). LANTERN:
+Leveraging local ancestry tracts to enhance rare-variant aggregate
+association testing. <em>medRxiv</em>. doi: <a href="https://doi.org/10.64898/2026.04.24.26351693" class="external-link">10.64898/2026.04.24.26351693</a>.</p>
+</div>
+<div class="section level3">
+<h3 id="workflow">Workflow<a class="anchor" aria-label="anchor" href="#workflow"></a>
+</h3>
+<p>The analysis has three steps, one function each:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>Split</strong> a phased VCF by local ancestry from an RFMix
-<code>.msp.tsv</code> file with <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>.</li>
+<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> reads a phased VCF and an RFMix
+local-ancestry file and returns one dosage matrix per ancestry.</li>
 <li>
-<strong>Write</strong> each ancestry’s dosages to a <em><a href="https://bioconductor.org/packages/3.23/SeqArray" class="external-link">SeqArray</a></em>
-GDS file with <code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code>.</li>
+<code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code> saves each matrix as a <em><a href="https://bioconductor.org/packages/3.23/SeqArray" class="external-link">SeqArray</a></em>
+GDS file, the format GMMAT reads.</li>
 <li>
-<strong>Test</strong> each gene in every ancestry and Cauchy-combine
-the results with <code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code>.</li>
+<code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> runs SMMAT on each GDS file and
+combines the results.</li>
 </ol>
+</div>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -138,48 +205,62 @@ the results with <code><a href="../reference/ancestry_smmat.html">ancestry_smmat
 <code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"BiocManager"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"BiocManager"</span><span class="op">)</span></span>
 <span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"lantern"</span><span class="op">)</span></span></code></pre></div>
+<p>Step 3 also needs GMMAT (from CRAN) and SeqVarTools (from
+Bioconductor):</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"GMMAT"</span><span class="op">)</span></span>
+<span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"SeqVarTools"</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://yuw444.github.io/lantern/">lantern</a></span><span class="op">)</span></span></code></pre></div>
-<p>lantern reads VCFs with <code>bcftools</code> when it is on
-<code>PATH</code>, which is fastest and also reads BCF. Otherwise it
-falls back to <em><a href="https://bioconductor.org/packages/3.23/SeqArray" class="external-link">SeqArray</a></em>,
-so no external tools are needed.</p>
 </div>
 <div class="section level2">
 <h2 id="example-data">Example data<a class="anchor" aria-label="anchor" href="#example-data"></a>
 </h2>
-<p>The package ships a small simulated dataset: 60 admixed samples, 200
-rare variants on chromosome 19, two ancestral populations (AFR, EUR) and
-8 genes. The phenotype carries an effect that is driven only by
-African-ancestry alleles in <code>GENE2</code>.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<p>lantern includes a small simulated dataset: 60 admixed individuals,
+200 rare variants on chromosome 19 and eight genes. We simulated a
+continuous trait <code>y</code> that is raised by alternate alleles in
+<code>GENE2</code>, but only when the allele sits on an African
+haplotype. A good analysis should find <code>GENE2</code> in the
+African-ancestry test and not in the European one.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">ext</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, package <span class="op">=</span> <span class="st">"lantern"</span><span class="op">)</span></span>
-<span><span class="va">vcf</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy.vcf.gz"</span><span class="op">)</span>     <span class="co"># phased genotypes</span></span>
-<span><span class="va">msp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy.msp.tsv"</span><span class="op">)</span>    <span class="co"># RFMix local ancestry</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/substr.html" class="external-link">substr</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/readLines.html" class="external-link">readLines</a></span><span class="op">(</span><span class="va">msp</span>, n <span class="op">=</span> <span class="fl">3</span><span class="op">)</span>, <span class="fl">1</span>, <span class="fl">70</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "#Subpopulation order/codes: AFR=0\tEUR=1"                                                      </span></span>
-<span><span class="co">#&gt; [2] "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS001.0\tS001.1\tS002.0\tS002.1\tS003.0\tS"             </span></span>
-<span><span class="co">#&gt; [3] "chr19\t1e+06\t4999999\t1.00\t5.00\t25\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t1\t0\t0\t1\t0\t0\t0\t0"</span></span></code></pre></div>
+<span><span class="va">vcf</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy.vcf.gz"</span><span class="op">)</span></span>
+<span><span class="va">msp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy.msp.tsv"</span><span class="op">)</span></span></code></pre></div>
+<p>The VCF holds phased genotypes. A <code>|</code> separates the two
+copies of the chromosome, so <code>0|1</code> means the alternate allele
+is on the second copy:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">vcf_lines</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readLines.html" class="external-link">readLines</a></span><span class="op">(</span><span class="va">vcf</span><span class="op">)</span></span>
+<span><span class="va">data_lines</span> <span class="op">&lt;-</span> <span class="va">vcf_lines</span><span class="op">[</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/startsWith.html" class="external-link">startsWith</a></span><span class="op">(</span><span class="va">vcf_lines</span>, <span class="st">"##"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/substr.html" class="external-link">substr</a></span><span class="op">(</span><span class="va">data_lines</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">]</span>, <span class="fl">1</span>, <span class="fl">60</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS001\tS002\tS003"     </span></span>
+<span><span class="co">#&gt; [2] "chr19\t1168394\t.\tT\tA\t.\tPASS\t.\tGT\t0|0\t0|0\t0|0\t0|0\t0|0\t0|0\t0|0\t"</span></span>
+<span><span class="co">#&gt; [3] "chr19\t1240171\t.\tT\tC\t.\tPASS\t.\tGT\t0|0\t0|0\t0|0\t0|1\t0|0\t0|0\t0|0\t"</span></span></code></pre></div>
+<p>The MSP file is RFMix’s local-ancestry output. Its first line gives
+the population codes (here 0 = AFR and 1 = EUR). Each later row is a
+segment of the chromosome, with one ancestry call per sample and
+chromosome copy (columns <code>S001.0</code>, <code>S001.1</code>,
+…):</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/substr.html" class="external-link">substr</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/readLines.html" class="external-link">readLines</a></span><span class="op">(</span><span class="va">msp</span>, n <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>, <span class="fl">1</span>, <span class="fl">70</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "#Subpopulation order/codes: AFR=0\tEUR=1"                                                     </span></span>
+<span><span class="co">#&gt; [2] "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS001.0\tS001.1\tS002.0\tS002.1\tS003.0\tS"            </span></span>
+<span><span class="co">#&gt; [3] "chr19\t1000000\t4999999\t1.00\t5.00\t25\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t1\t0\t0\t1\t0\t0\t0"</span></span>
+<span><span class="co">#&gt; [4] "chr19\t5000000\t8999999\t5.00\t9.00\t25\t0\t0\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t1\t0\t0\t0\t0"</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="step-1-split-dosages-by-local-ancestry">Step 1: split dosages by local ancestry<a class="anchor" aria-label="anchor" href="#step-1-split-dosages-by-local-ancestry"></a>
 </h2>
-<p><code>mode = "haplotype"</code> assigns each phased allele to the
-ancestry of its own haplotype, so it is exact.
-<code>mode = "dosage"</code> ignores phase: it splits ambiguous
-mixed-ancestry heterozygotes using population proportions estimated from
-the unambiguous carriers, shrunk toward each chromosome arm’s global
-ancestry. See <code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> for the
-details.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<p><code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> matches samples between the two files,
+finds the ancestry segment that contains each variant, and splits the
+dosages.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">split</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf</span>, <span class="va">msp</span>, mode <span class="op">=</span> <span class="st">"dosage"</span>, chrom <span class="op">=</span> <span class="st">"chr19"</span>,</span>
-<span>                        verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">split</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "AFR"             "EUR"             "variant_info"    "sample_ids"     </span></span>
-<span><span class="co">#&gt; [5] "mode"            "ancestry_counts" "tract_info"      "overlap"</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">split</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 184  60</span></span>
-<span><span class="va">split</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span></span>
+<span>                        verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<p>The result has one variants x samples dosage matrix per population,
+named after the populations in the MSP file:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">split</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span></span>
 <span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6]</span></span>
 <span><span class="co">#&gt; [1,]    0    0    0    0    0    0</span></span>
 <span><span class="co">#&gt; [2,]    0    0    0    1    0    0</span></span>
@@ -191,8 +272,25 @@ details.</p>
 <span><span class="co">#&gt; [2,]    0    0    0    0    0    0</span></span>
 <span><span class="co">#&gt; [3,]    0    0    0    0    0    0</span></span>
 <span><span class="co">#&gt; [4,]    0    0    0    0    0    0</span></span></code></pre></div>
-<p>The result also records which variants and samples were kept:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<p>Most entries are 0 because the variants are rare.
+<code>mode = "dosage"</code> ignores phase. For a heterozygote with one
+African and one European haplotype, the genotype alone does not say
+which haplotype carries the allele, so the allele is shared between the
+two ancestries, with shares estimated from the other carriers of the
+same variant. Here is the first such heterozygote in the data; its two
+shares add up to its one allele:</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">i</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/which.html" class="external-link">which</a></span><span class="op">(</span><span class="va">split</span><span class="op">$</span><span class="va">AFR</span> <span class="op"><a href="https://rdrr.io/r/base/Arithmetic.html" class="external-link">%%</a></span> <span class="fl">1</span> <span class="op">&gt;</span> <span class="fl">0</span>, arr.ind <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="va">split</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="va">i</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span>, EUR <span class="op">=</span> <span class="va">split</span><span class="op">$</span><span class="va">EUR</span><span class="op">[</span><span class="va">i</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="va">i</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   AFR   EUR </span></span>
+<span><span class="co">#&gt; 0.875 0.125</span></span></code></pre></div>
+<p><code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> explains how the shares are
+calculated. With phased data you can instead use
+<code>mode = "haplotype"</code>, which assigns every allele to the
+ancestry of its own haplotype and never produces fractions.</p>
+<p>The result also lists the variants that were kept. Variants with no
+alternate allele in these samples are dropped (16 here):</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">split</span><span class="op">$</span><span class="va">variant_info</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   chrom     pos ref alt</span></span>
 <span><span class="co">#&gt; 1 chr19 1168394   T   A</span></span>
@@ -214,67 +312,125 @@ details.</p>
 <div class="section level2">
 <h2 id="step-2-write-per-ancestry-gds-files">Step 2: write per-ancestry GDS files<a class="anchor" aria-label="anchor" href="#step-2-write-per-ancestry-gds-files"></a>
 </h2>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<p>GMMAT reads genotypes from GDS files, so each dosage matrix is saved
+to its own file. The function returns the file paths, named by
+population.</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">out_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="st">"lantern-"</span><span class="op">)</span></span>
 <span><span class="va">gds</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/write_ancestry_gds.html">write_ancestry_gds</a></span><span class="op">(</span><span class="va">split</span>, <span class="va">out_dir</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="va">gds</span></span>
 <span><span class="co">#&gt; $AFR</span></span>
-<span><span class="co">#&gt; [1] "/tmp/Rtmp7eWPFD/lantern-422647e4df14/AFR.gds"</span></span>
+<span><span class="co">#&gt; [1] "/tmp/Rtmp7NLrWP/lantern-429a61639d83/AFR.gds"</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; $EUR</span></span>
-<span><span class="co">#&gt; [1] "/tmp/Rtmp7eWPFD/lantern-422647e4df14/EUR.gds"</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] "/tmp/Rtmp7NLrWP/lantern-429a61639d83/EUR.gds"</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="step-3-ancestry-stratified-gene-tests">Step 3: ancestry-stratified gene tests<a class="anchor" aria-label="anchor" href="#step-3-ancestry-stratified-gene-tests"></a>
+<h2 id="step-3-test-each-gene-in-each-ancestry">Step 3: test each gene in each ancestry<a class="anchor" aria-label="anchor" href="#step-3-test-each-gene-in-each-ancestry"></a>
 </h2>
-<p><code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> fits the null model once with
-<code><a href="https://rdrr.io/pkg/GMMAT/man/glmmkin.html" class="external-link">GMMAT::glmmkin()</a></code>, then runs <code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">GMMAT::SMMAT()</a></code> on
-each ancestry’s GDS file. Gene-level weights for the Cauchy combination
-are the median per-variant carrier counts in each ancestry. The samples
-here are unrelated, so the kinship matrix is the identity.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<p>SMMAT needs three more inputs: a phenotype table, a kinship matrix
+and a gene-group file. The phenotype table has one row per sample, with
+the trait and covariates:</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pheno</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.delim</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy_pheno.tsv"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">kinship</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">pheno</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/dimnames.html" class="external-link">dimnames</a></span><span class="op">(</span><span class="va">kinship</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">pheno</span><span class="op">$</span><span class="va">id</span>, <span class="va">pheno</span><span class="op">$</span><span class="va">id</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds</span>, <span class="va">pheno</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>,</span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pheno</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     id      y age sex</span></span>
+<span><span class="co">#&gt; 1 S001 1.1948  62   1</span></span>
+<span><span class="co">#&gt; 2 S002 2.2396  62   1</span></span>
+<span><span class="co">#&gt; 3 S003 7.6596  64   0</span></span></code></pre></div>
+<p>The kinship matrix describes how related the samples are. Our
+simulated samples are unrelated, so we use the identity matrix. In a
+real study this would be a genetic relatedness matrix:</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">kinship</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">pheno</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/dimnames.html" class="external-link">dimnames</a></span><span class="op">(</span><span class="va">kinship</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">pheno</span><span class="op">$</span><span class="va">id</span>, <span class="va">pheno</span><span class="op">$</span><span class="va">id</span><span class="op">)</span></span></code></pre></div>
+<p>The gene-group file assigns variants to genes. It has no header and
+six columns: gene, chromosome, position, reference allele, alternate
+allele and a weight. These are the 25 variants of
+<code>GENE2</code>:</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">genes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.delim</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy_genes.tsv"</span><span class="op">)</span>, header <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>                    col.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene"</span>, <span class="st">"chr"</span>, <span class="st">"pos"</span>, <span class="st">"ref"</span>, <span class="st">"alt"</span>, <span class="st">"weight"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">genes</span><span class="op">[</span><span class="va">genes</span><span class="op">$</span><span class="va">gene</span> <span class="op">==</span> <span class="st">"GENE2"</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     gene chr     pos ref alt weight</span></span>
+<span><span class="co">#&gt; 26 GENE2  19 5249792   A   T      1</span></span>
+<span><span class="co">#&gt; 27 GENE2  19 5436416   G   C      1</span></span>
+<span><span class="co">#&gt; 28 GENE2  19 5496995   T   A      1</span></span>
+<span><span class="co">#&gt; 29 GENE2  19 5510001   G   C      1</span></span>
+<span><span class="co">#&gt; 30 GENE2  19 5601633   G   T      1</span></span>
+<span><span class="co">#&gt; 31 GENE2  19 5969726   G   T      1</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/table.html" class="external-link">table</a></span><span class="op">(</span><span class="va">genes</span><span class="op">$</span><span class="va">gene</span><span class="op">)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; GENE1 GENE2 GENE3 GENE4 GENE5 GENE6 GENE7 GENE8 </span></span>
+<span><span class="co">#&gt;    25    25    25    25    25    25    25    25</span></span></code></pre></div>
+<p><code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> fits the null model (the trait
+explained by the covariates and relatedness, without genotypes) once,
+then runs SMMAT for each ancestry. Passing <code>ancestry_counts</code>
+and <code>variant_info</code> from Step 1 weights the Cauchy combination
+by how many samples of each ancestry carry a gene’s variants, so the
+ancestry with more data counts for more.</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds</span>, <span class="va">pheno</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>,</span>
 <span>                      gene_group_file <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy_genes.tsv"</span><span class="op">)</span>,</span>
 <span>                      ancestry_counts <span class="op">=</span> <span class="va">split</span><span class="op">$</span><span class="va">ancestry_counts</span>,</span>
 <span>                      variant_info    <span class="op">=</span> <span class="va">split</span><span class="op">$</span><span class="va">variant_info</span>,</span>
 <span>                      verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="va">res</span><span class="op">$</span><span class="va">results</span></span>
 <span><span class="co">#&gt;    gene        p_AFR     p_EUR w_AFR w_EUR     p_cauchy</span></span>
-<span><span class="co">#&gt; 1 GENE1 8.429637e-01 0.2321365    42     1 8.378715e-01</span></span>
-<span><span class="co">#&gt; 2 GENE2 1.860597e-08 0.8339380    39     2 1.956013e-08</span></span>
-<span><span class="co">#&gt; 3 GENE3 5.076218e-01 0.2765924    41     3 4.887590e-01</span></span>
-<span><span class="co">#&gt; 4 GENE4 3.937408e-01 0.7851541    40     1 4.049334e-01</span></span>
-<span><span class="co">#&gt; 5 GENE5 2.826767e-01 0.2007261    40     2 2.776638e-01</span></span>
-<span><span class="co">#&gt; 6 GENE6 6.638040e-01 0.5783176    33     2 6.594389e-01</span></span>
-<span><span class="co">#&gt; 7 GENE7 1.517208e-01 0.4259828    41     1 1.544780e-01</span></span>
-<span><span class="co">#&gt; 8 GENE8 6.060560e-01 0.3600061    33     3 5.863210e-01</span></span></code></pre></div>
-<p><code>GENE2</code> is strongly associated in the AFR test but not in
-the EUR test, which matches the simulated African-specific effect. A
-test that pools both ancestries would dilute that signal.</p>
+<span><span class="co">#&gt; 1 GENE1 8.269778e-01 0.2250896    42     1 8.212171e-01</span></span>
+<span><span class="co">#&gt; 2 GENE2 8.625395e-09 0.7771531    39     2 9.067722e-09</span></span>
+<span><span class="co">#&gt; 3 GENE3 5.162240e-01 0.2822809    41     3 4.974372e-01</span></span>
+<span><span class="co">#&gt; 4 GENE4 3.977574e-01 0.6121023    40     1 4.026767e-01</span></span>
+<span><span class="co">#&gt; 5 GENE5 3.039969e-01 0.2189521    40     2 2.989101e-01</span></span>
+<span><span class="co">#&gt; 6 GENE6 6.483093e-01 0.5622577    33     2 6.438543e-01</span></span>
+<span><span class="co">#&gt; 7 GENE7 1.595176e-01 0.4246312    41     1 1.623335e-01</span></span>
+<span><span class="co">#&gt; 8 GENE8 5.571825e-01 0.3854922    33     3 5.427531e-01</span></span></code></pre></div>
+<p>The table has one row per gene: <code>p_AFR</code> and
+<code>p_EUR</code> are the SMMAT p-values from each ancestry,
+<code>w_AFR</code> and <code>w_EUR</code> the weights, and
+<code>p_cauchy</code> the combined p-value. <code>GENE2</code> stands
+out:</p>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">res</span><span class="op">$</span><span class="va">results</span><span class="op">[</span><span class="va">res</span><span class="op">$</span><span class="va">results</span><span class="op">$</span><span class="va">gene</span> <span class="op">==</span> <span class="st">"GENE2"</span>, <span class="op">]</span></span>
+<span><span class="co">#&gt;    gene        p_AFR     p_EUR w_AFR w_EUR     p_cauchy</span></span>
+<span><span class="co">#&gt; 2 GENE2 8.625395e-09 0.7771531    39     2 9.067722e-09</span></span></code></pre></div>
+<p>Its African-ancestry p-value is very small, its European-ancestry
+p-value is not, and the combined p-value keeps the signal. For
+comparison, we test the same genes without splitting by ancestry. Adding
+the two dosage matrices gives back each sample’s total dosage:</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">pooled_gds</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">out_dir</span>, <span class="st">"pooled.gds"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/write_dosage_gds.html">write_dosage_gds</a></span><span class="op">(</span><span class="va">split</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">split</span><span class="op">$</span><span class="va">EUR</span>, <span class="va">split</span><span class="op">$</span><span class="va">variant_info</span>,</span>
+<span>                 <span class="va">split</span><span class="op">$</span><span class="va">sample_ids</span>, <span class="va">pooled_gds</span><span class="op">)</span></span>
+<span><span class="va">pooled</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>POOLED <span class="op">=</span> <span class="va">pooled_gds</span><span class="op">)</span>, <span class="va">pheno</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>,</span>
+<span>                         <span class="va">kinship</span>, <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">ext</span>, <span class="st">"toy_genes.tsv"</span><span class="op">)</span>,</span>
+<span>                         verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">pooled</span><span class="op">$</span><span class="va">results</span><span class="op">[</span><span class="va">pooled</span><span class="op">$</span><span class="va">results</span><span class="op">$</span><span class="va">gene</span> <span class="op">==</span> <span class="st">"GENE2"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene"</span>, <span class="st">"p_POOLED"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;    gene    p_POOLED</span></span>
+<span><span class="co">#&gt; 2 GENE2 2.38154e-08</span></span></code></pre></div>
+<p>The pooled test also detects <code>GENE2</code>, with a p-value about
+three times larger: carriers whose allele sits on a European haplotype
+add to the pooled dosage without adding to the effect.</p>
 </div>
 <div class="section level2">
 <h2 id="further-reading">Further reading<a class="anchor" aria-label="anchor" href="#further-reading"></a>
 </h2>
 <ul>
 <li>
-<code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code>: what the split computes,
-on small matrices, for two or more populations.</li>
+<code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code> works through the split on
+small matrices, for two and for more populations.</li>
 <li>
-<code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code>: the VCF and MSP input
-formats, with four populations.</li>
+<code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code> shows the VCF and MSP
+formats in more detail, including a four-population example.</li>
 <li>
-<code><a href="../articles/real-data-chr19.html">vignette("real-data-chr19")</a></code>: a real-cohort analysis
-with binary, continuous and count phenotypes.</li>
+<code><a href="../articles/real-data-chr19.html">vignette("real-data-chr19")</a></code> analyses chromosome 19 in a
+real cohort with binary, continuous and count traits.</li>
 </ul>
 </div>
 <div class="section level2">
 <h2 id="session-information">Session information<a class="anchor" aria-label="anchor" href="#session-information"></a>
 </h2>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
 <span><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
@@ -297,17 +453,17 @@ with binary, continuous and count phenotypes.</li>
 <span><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; other attached packages:</span></span>
-<span><span class="co">#&gt; [1] lantern_0.99.0   BiocStyle_2.40.0</span></span>
+<span><span class="co">#&gt; [1] lantern_0.99.1   BiocStyle_2.40.0</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span><span class="co">#&gt;  [1] tidyselect_1.2.1       dplyr_1.2.1            Biostrings_2.80.2     </span></span>
 <span><span class="co">#&gt;  [4] gdsfmt_1.48.2          fastmap_1.2.0          CompQuadForm_1.4.4    </span></span>
-<span><span class="co">#&gt;  [7] digest_0.6.39          rpart_4.1.27           lifecycle_1.0.5       </span></span>
+<span><span class="co">#&gt;  [7] rpart_4.1.27           digest_0.6.39          lifecycle_1.0.5       </span></span>
 <span><span class="co">#&gt; [10] survival_3.8-6         magrittr_2.0.5         compiler_4.6.1        </span></span>
 <span><span class="co">#&gt; [13] rlang_1.3.0            sass_0.4.10            tools_4.6.1           </span></span>
 <span><span class="co">#&gt; [16] yaml_2.3.12            data.table_1.18.6.1    knitr_1.52            </span></span>
-<span><span class="co">#&gt; [19] SeqArray_1.52.1        purrr_1.2.2            BiocGenerics_0.58.1   </span></span>
-<span><span class="co">#&gt; [22] GWASExactHW_1.2        desc_1.4.3             nnet_7.3-20           </span></span>
+<span><span class="co">#&gt; [19] SeqArray_1.52.1        purrr_1.2.2            GWASExactHW_1.2       </span></span>
+<span><span class="co">#&gt; [22] BiocGenerics_0.58.1    desc_1.4.3             nnet_7.3-20           </span></span>
 <span><span class="co">#&gt; [25] grid_4.6.1             stats4_4.6.1           jomo_2.7-6            </span></span>
 <span><span class="co">#&gt; [28] GMMAT_1.5.0            mice_3.19.0            iterators_1.0.14      </span></span>
 <span><span class="co">#&gt; [31] MASS_7.3-65            cli_3.6.6              rmarkdown_2.32        </span></span>
@@ -321,14 +477,14 @@ with binary, continuous and count phenotypes.</li>
 <span><span class="co">#&gt; [55] systemfonts_1.3.2      foreach_1.5.2          tidyr_1.3.2           </span></span>
 <span><span class="co">#&gt; [58] jquerylib_0.1.4        glue_1.8.1             pkgdown_2.2.1         </span></span>
 <span><span class="co">#&gt; [61] nloptr_2.2.1           pan_2.0                codetools_0.2-20      </span></span>
-<span><span class="co">#&gt; [64] shape_1.4.6.1          GenomicRanges_1.64.0   lme4_2.0-6            </span></span>
+<span><span class="co">#&gt; [64] shape_1.4.6.1          GenomicRanges_1.64.0   lme4_2.1-0            </span></span>
 <span><span class="co">#&gt; [67] tibble_3.3.1           pillar_1.11.1          htmltools_0.5.9       </span></span>
-<span><span class="co">#&gt; [70] Seqinfo_1.2.0          R6_2.6.1               textshaping_1.0.5     </span></span>
-<span><span class="co">#&gt; [73] SeqVarTools_1.50.1     Rdpack_2.6.6           formula.tools_1.7.1   </span></span>
+<span><span class="co">#&gt; [70] Seqinfo_1.2.0          R6_2.6.1               SeqVarTools_1.50.1    </span></span>
+<span><span class="co">#&gt; [73] textshaping_1.0.5      Rdpack_2.6.6           formula.tools_1.7.1   </span></span>
 <span><span class="co">#&gt; [76] evaluate_1.0.5         lattice_0.22-9         Biobase_2.72.0        </span></span>
 <span><span class="co">#&gt; [79] rbibutils_2.4.1        backports_1.5.1        broom_1.0.13          </span></span>
 <span><span class="co">#&gt; [82] bslib_0.12.0           Rcpp_1.1.2             nlme_3.1-169          </span></span>
-<span><span class="co">#&gt; [85] mgcv_1.9-4             logistf_1.26.1         xfun_0.61             </span></span>
+<span><span class="co">#&gt; [85] mgcv_1.9-4             logistf_1.26.1         xfun_0.62             </span></span>
 <span><span class="co">#&gt; [88] fs_2.1.0               pkgconfig_2.0.3</span></span></code></pre></div>
 </div>
   </div>

@@ -25,7 +25,7 @@ the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -90,8 +90,8 @@ the split defaults to 0.5 / 0.5.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">split_diploid_multi</span><span class="op">(</span></span>
 <span>  <span class="va">gt_genotype</span>,</span>
 <span>  <span class="va">ancestry</span>,</span>
-<span>  <span class="va">pure_codes</span>,</span>
-<span>  <span class="va">mixed_codes</span>,</span>
+<span>  pure_codes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span>,</span>
+<span>  mixed_codes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>code <span class="op">=</span> <span class="fl">2L</span>, pop1 <span class="op">=</span> <span class="st">"AFR"</span>, pop2 <span class="op">=</span> <span class="st">"EUR"</span><span class="op">)</span>,</span>
 <span>  gla <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  arm_id <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -113,7 +113,9 @@ same dimensions as <code>gt_genotype</code>.</p></dd>
 <dt id="arg-pure-codes">pure_codes<a class="anchor" aria-label="anchor" href="#arg-pure-codes"></a></dt>
 <dd><p>Named integer vector mapping each population label to its
 pure-ancestry diploid code.
-Example: <code>c(AFR = 3L, EUR = 1L, NAT = 4L)</code>.</p></dd>
+Example: <code>c(AFR = 3L, EUR = 1L, NAT = 4L)</code>. The default is the
+two-population coding used by <code><a href="split_diploid.html">split_diploid</a></code>
+(3 = AFR/AFR, 1 = EUR/EUR).</p></dd>
 
 
 <dt id="arg-mixed-codes">mixed_codes<a class="anchor" aria-label="anchor" href="#arg-mixed-codes"></a></dt>
@@ -129,23 +131,29 @@ Example: <code>c(AFR = 3L, EUR = 1L, NAT = 4L)</code>.</p></dd>
     (must be a name in <code>pure_codes</code>).</p></dd>
 
 
-</dl><p>One row per mixed-ancestry diploid type.
+</dl><p>One row per mixed-ancestry diploid type. The default is the
+two-population mixed code 2 = AFR/EUR, so with both defaults
+<code>split_diploid_multi(gt, ancestry)</code> matches
+<code>split_diploid(gt, ancestry)</code>.
 Example for 3 populations:
 <code>data.frame(code=c(2L,5L,6L), pop1=c("AFR","AFR","EUR"), pop2=c("EUR","NAT","NAT"))</code></p></dd>
 
 
 <dt id="arg-gla">gla<a class="anchor" aria-label="anchor" href="#arg-gla"></a></dt>
-<dd><p>Optional 2 x K numeric matrix (rows "p"/"q", columns matching
-<code>names(pure_codes)</code>) of per-arm global local ancestry proportions,
-as produced by <code><a href="ancestry_split.html">ancestry_split</a></code> internally. When <code>NULL</code>
-(default), GLA shrinkage is disabled and behavior matches the original
-p[k] estimator exactly, including its 0.5/0.5 singleton fallback.</p></dd>
+<dd><p>Optional shrinkage target: numeric matrix with one row per
+target group and columns matching <code>names(pure_codes)</code>. Each
+ambiguous pair (a, b) is shrunk toward \(t_a / (t_a + t_b)\) by the
+pair's ambiguous share \(w\) of the evidence.
+<code><a href="ancestry_split.html">ancestry_split</a></code> uses a single row of 1/K (i.e. 1/2 for
+every pair). When <code>NULL</code> (default), no shrinkage: the raw p[k]
+ratio is used, with a 0.5/0.5 fallback only when a pair has no
+unambiguous evidence.</p></dd>
 
 
 <dt id="arg-arm-id">arm_id<a class="anchor" aria-label="anchor" href="#arg-arm-id"></a></dt>
 <dd><p>Optional integer vector (length = <code>nrow(gt_genotype)</code>)
-giving each variant's row index into <code>gla</code> (0-based). Required
-together with <code>gla</code>.</p></dd>
+giving each variant's row index into <code>gla</code> (0-based; all zeros for
+a one-row target). Required together with <code>gla</code>.</p></dd>
 
 </dl></div>
     <div id="value">

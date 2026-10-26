@@ -17,7 +17,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -66,10 +66,31 @@
     </div>
 
     <div class="section level2">
+<h2 class="page-header" data-toc-text="0.99.1" id="lantern-0991">lantern 0.99.1<a class="anchor" aria-label="anchor" href="#lantern-0991"></a></h2>
+<p>Changes in response to the Bioconductor review.</p>
+<ul><li>Bug fixes in the matrix input of <code>ancestry_split_dosage(gt_matrix, pt_matrix)</code>. The VCF/MSP input and <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> were not affected.
+<ul><li>Genotypes were split with the wrong samples’ ancestry calls, because the ancestry matrix was passed to the C code without transposing it.</li>
+<li>Variants and regions matched by name are now paired by name; they were paired by position, so a reordered <code>pt_matrix</code> gave wrong results.</li>
+<li>Coordinate matching (<code>"chr:pos"</code> within <code>"chr:start-end"</code>) now allows several variants per region, which previously gave an error.</li>
+<li>
+<code>counts</code> are now per variant, as documented (they were per sample).</li>
+<li>Unnamed matrices of different sizes no longer fail, and inputs with no variant overlap give a clear error.</li>
+</ul></li>
+<li>Exported functions now check their arguments and give informative errors.</li>
+<li>New defaults: <code><a href="../reference/split_diploid_multi.html">split_diploid_multi()</a></code> defaults to the two-population codes of <code><a href="../reference/split_diploid.html">split_diploid()</a></code>; <code><a href="../reference/read_bed_file.html">read_bed_file()</a></code> finds the <code>.bim</code> and <code>.fam</code> files next to the <code>.bed</code> file; <code><a href="../reference/ancestry_split_phased.html">ancestry_split_phased()</a></code> needs <code>out_path</code> only when <code>write_vcf = TRUE</code>.</li>
+<li>
+<code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> now requires <code>ancestry_counts</code> and <code>variant_info</code> together (previously one without the other was silently ignored).</li>
+<li>The C code checks for user interrupts.</li>
+<li>Long functions were split into smaller helpers and loops vectorized; results are unchanged.</li>
+<li>Removed the unused global-ancestry helpers and the internal <code>centromeres_hg38</code> table.</li>
+<li>Vignettes rewritten for readability; the real-data vignette’s source is no longer shipped in <code>vignettes/</code>. The Getting started vignette now explains the method’s motivation with figures from the LANTERN preprint.</li>
+<li>Added <code>citation("lantern")</code> for the preprint (Wang et al. 2026, medRxiv).</li>
+</ul></div>
+    <div class="section level2">
 <h2 class="page-header" data-toc-text="0.99.0" id="lantern-0990">lantern 0.99.0<a class="anchor" aria-label="anchor" href="#lantern-0990"></a></h2>
 <ul><li>Initial Bioconductor submission.</li>
 <li>
-<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> splits a phased VCF into per-ancestry dosages using RFMix local ancestry, in <code>"haplotype"</code> (phased) or <code>"dosage"</code> (unphased) mode, for any number of populations. Dosage mode shrinks ambiguous mixed-ancestry splits toward each chromosome arm’s global ancestry.</li>
+<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> splits a phased VCF into per-ancestry dosages using RFMix local ancestry, in <code>"haplotype"</code> (phased) or <code>"dosage"</code> (unphased) mode, for any number of populations. Dosage mode shrinks ambiguous mixed-ancestry splits toward 1/2, in proportion to the share of the variant’s evidence that is ambiguous. (An earlier development version shrank toward each chromosome arm’s global local ancestry; that target and the <code>use_gla</code> argument were removed.)</li>
 <li>
 <code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code> / <code><a href="../reference/write_dosage_gds.html">write_dosage_gds()</a></code> write SeqArray GDS files.</li>
 <li>

@@ -22,7 +22,7 @@ directly.'><meta property="og:image" content="https://yuw444.github.io/lantern/l
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -84,7 +84,7 @@ directly.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">ancestry_split_phased</span><span class="op">(</span></span>
 <span>  <span class="va">vcf_path</span>,</span>
 <span>  <span class="va">msp_path</span>,</span>
-<span>  <span class="va">out_path</span>,</span>
+<span>  out_path <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  chrom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  write_vcf <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
@@ -108,7 +108,8 @@ to force one.</p></dd>
 
 
 <dt id="arg-out-path">out_path<a class="anchor" aria-label="anchor" href="#arg-out-path"></a></dt>
-<dd><p>Output directory for GDS and cache files.</p></dd>
+<dd><p>Output directory for the GDS files. Only needed (and
+then required) when <code>write_vcf = TRUE</code>.</p></dd>
 
 
 <dt id="arg-chrom">chrom<a class="anchor" aria-label="anchor" href="#arg-chrom"></a></dt>

@@ -16,14 +16,13 @@
 <url><loc>https://yuw444.github.io/lantern/reference/ancestry_split_phased.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/cauchy_combine.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/count_ancestry_codes.html</loc></url>
-<url><loc>https://yuw444.github.io/lantern/reference/dot-assign_arm.html</loc></url>
-<url><loc>https://yuw444.github.io/lantern/reference/dot-compute_arm_gla.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-compute_gene_weights.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-gla_call_args.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-parse_msp.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-parse_phased_gt_matrix.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-parse_vcf_msp_common.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-resolve_vcf_contig.html</loc></url>
+<url><loc>https://yuw444.github.io/lantern/reference/dot-uniform_shrink_target.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-vcf_read_gt.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-vcf_reader.html</loc></url>
 <url><loc>https://yuw444.github.io/lantern/reference/dot-vcf_sample_ids.html</loc></url>

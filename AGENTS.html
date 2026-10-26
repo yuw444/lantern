@@ -17,7 +17,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -73,12 +73,10 @@
 ├── DESCRIPTION / NAMESPACE        # package metadata
 ├── R/
 │   ├── ancestry_split.R           # Step 1: ancestry_split(), split_diploid()/split_haplotype() C wrappers, read_bed_file()
-│   ├── global_ancestry.R          # GLA shrinkage: .assign_arm(), .compute_arm_gla()
 │   ├── write_ancestry_gds.R       # Step 2: write_ancestry_gds(), write_dosage_gds()
 │   ├── ancestry_smmat.R           # Step 3: ancestry_smmat() (SMMAT + per-gene ancestry weights + Cauchy combination)
 │   ├── utils.R                    # cauchy_combine()
 │   ├── lantern-package.R          # package-level roxygen doc
-│   └── sysdata.rda                # internal data: centromeres_hg38 (from inst/scripts/centromeres_hg38.R)
 ├── src/                           # C backend — see lantern/src/AGENTS.md
 │   ├── ancestry.c                 # ALL core algorithms: p1/p2 split, phased split, bed reader
 │   ├── ancestry.h                 # C function declarations
@@ -86,7 +84,7 @@
 │   └── Makevars                   # PKG_CFLAGS = -O3 -march=native -Wall
 └── tests/testthat/
     ├── test-ancestry_split.R      # split_diploid/split_diploid_multi/split_haplotype + ancestry_split()
-    ├── test-global_ancestry.R     # GLA shrinkage (.assign_arm, .compute_arm_gla, weighted blend)
+    ├── test-shrinkage.R           # shrinkage blend (gla/arm_id target), ancestry_split() 1/2 target end-to-end
     ├── test-ancestry_smmat.R      # ancestry_smmat() + cauchy_combine()
     ├── test-write_ancestry_gds.R  # write_dosage_gds()/write_ancestry_gds()
     └── test-utils.R</code></pre>
@@ -132,7 +130,7 @@
 </tr><tr><td><code>cauchy_combine(p_values, weights)</code></td>
 <td><code>R/utils.R</code></td>
 <td>(R-only)</td>
-</tr></tbody></table><p><code>gla</code>/<code>arm_id</code> on <code><a href="reference/split_diploid.html">split_diploid()</a></code>/<code><a href="reference/split_diploid_multi.html">split_diploid_multi()</a></code> are optional; <code>NULL</code> (the default) disables GLA shrinkage and reproduces the pre-shrinkage 0.5/0.5 singleton-fallback estimator exactly. See root <code>CLAUDE.md</code>’s “Core Algorithm” section for the shrinkage formula and rationale.</p>
+</tr></tbody></table><p><code>gla</code>/<code>arm_id</code> on <code><a href="reference/split_diploid.html">split_diploid()</a></code>/<code><a href="reference/split_diploid_multi.html">split_diploid_multi()</a></code> are an optional, generic shrinkage target (one row of target proportions per group, <code>arm_id</code> = 0-based row per variant); <code>NULL</code> (the default) means no shrinkage, i.e. the raw ratio with only the flat 0.5/0.5 singleton fallback. <code><a href="reference/ancestry_split.html">ancestry_split()</a></code> (and the <code><a href="reference/ancestry_split_dosage.html">ancestry_split_dosage()</a></code> matrix path) always passes a one-row 1/K target (<code><a href="reference/dot-uniform_shrink_target.html">.uniform_shrink_target()</a></code>), i.e. shrinkage toward 1/2 for every pair; it has no switch for this. See root <code>CLAUDE.md</code>’s “Core Algorithm” section for the formula and rationale.</p>
 </div>
 <div class="section level2">
 <h2 id="build--test">BUILD &amp; TEST<a class="anchor" aria-label="anchor" href="#build--test"></a></h2>
@@ -153,7 +151,7 @@
 <strong>Ancestry codes</strong>: integer 1/2/3 (2-population) or 1..K/mixed (K-population), never strings or factors.</li>
 <li>
 <strong>No dead C entry points</strong>: every function registered in <code>init.c</code> should have a real R-level caller somewhere in <code>R/*.R</code>. (Two functions violating this — <code>write_vcf_with_ancestry_C</code>, <code>subset_vcf_by_range_C</code> — were removed entirely in July 2026 after being found unreachable from any R code.)</li>
-</ul><p>See root <code>CLAUDE.md</code> for the full pipeline architecture, the GLA shrinkage algorithm, and current known issues (that file’s “Known Issues” section is the source of truth — don’t duplicate it here).</p>
+</ul><p>See root <code>CLAUDE.md</code> for the full pipeline architecture, the shrinkage-toward-1/2 algorithm, and current known issues (that file’s “Known Issues” section is the source of truth — don’t duplicate it here).</p>
 </div>
 </div>
 

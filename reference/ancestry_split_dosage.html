@@ -19,7 +19,7 @@ Memory efficient: single-pass subsetting using index vectors."><meta property="o
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -130,31 +130,36 @@ Only used when <code>vcf_path</code>/<code>msp_path</code> are supplied.</p></dd
     <h2>Value</h2>
     <p>List with elements:</p>
 <dl><dt>african</dt>
-<dd><p>African ancestry-specific dosage matrix</p></dd>
+<dd><p>African ancestry-specific dosage matrix (variants x
+    samples)</p></dd>
 
   <dt>european</dt>
 <dd><p>European ancestry-specific dosage matrix</p></dd>
 
   <dt>counts</dt>
-<dd><p>List of ancestry counts per region/sample</p></dd>
+<dd><p>List (<code>african</code>, <code>european</code>, <code>mixed</code>) of
+    per-variant counts of samples with ancestry code 3, 1 and 2</p></dd>
 
   <dt>overlap</dt>
 <dd><p>Overlap information</p></dd>
 
 </dl></div>
-    <div id="gla-shrinkage">
-    <h2>GLA shrinkage</h2>
-    <p>The <code>vcf_path</code>/<code>msp_path</code> shortcut
-  delegates to <code><a href="ancestry_split.html">ancestry_split</a></code>, which computes and applies
-  per-arm global local ancestry (GLA) shrinkage automatically from tract
-  positions. The direct <code>gt_matrix</code>/<code>pt_matrix</code> path has no
-  genomic position information and cannot derive GLA automatically, so it
-  always uses the original (unshrunk) p1/p2 estimator; this path also
-  reorders and filters variants internally (sample/region overlap,
-  monomorphic removal), so a caller-supplied <code>gla</code>/<code>arm_id</code>
-  could not be reliably kept aligned. Call <code><a href="split_diploid.html">split_diploid</a></code>
-  directly (no internal reordering) if you need GLA shrinkage with a
-  pre-computed <code>gla</code>/<code>arm_id</code> of your own.</p>
+    <div id="shrinkage">
+    <h2>Shrinkage</h2>
+    <p>Both input paths split ambiguous mixed-ancestry
+  heterozygotes with the same shrinkage toward 1/2 as
+  <code><a href="ancestry_split.html">ancestry_split</a></code> (see its "Shrinkage toward 1/2" section).
+  The target is the same for every variant, so the direct
+  <code>gt_matrix</code>/<code>pt_matrix</code> path needs no position information.</p>
+    </div>
+    <div id="matching-variants-to-regions">
+    <h2>Matching variants to regions</h2>
+    <p>Each variant (row of
+  <code>gt_matrix</code>) is paired with an ancestry column of <code>pt_matrix</code>
+  by, in order of preference: identical names; position, when rownames
+  look like <code>"chr:pos"</code> and colnames like <code>"chr:start-end"</code>
+  (the first region containing the variant; several variants may share a
+  region); or, when either matrix has no names, position in the matrix.</p>
     </div>
 
     <div id="ref-examples">
@@ -180,20 +185,15 @@ Only used when <code>vcf_path</code>/<code>msp_path</code> are supplied.</p></dd
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   Found 2 variants in 2 regions</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   Variants in GT: 2</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   Regions in PT: 2</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   Common variants/regions: 4</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span>   Matched variants: 2</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Step 3: Subsetting matrices...</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Step 3b: Filtering monomorphic variants...</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Step 4: Splitting genotypes by ancestry...</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   -&gt; African dosage matrix: 2 x 2</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   -&gt; European dosage matrix: 2 x 2</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Step 5: Counting ancestries per region...</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   -&gt; African (3): median = 1</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   -&gt; European (1): median = 0</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   -&gt; Mixed (2): median = 1</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Step 5: Counting ancestries per variant...</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> === Pipeline Complete ===</span>
 <span class="r-in"><span><span class="co"># Only sample_A and sample_B are kept (common to both)</span></span></span>

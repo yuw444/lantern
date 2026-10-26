@@ -37,7 +37,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -105,220 +105,222 @@ more populations</h1>
 <div class="section level3">
 <h3 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h3>
-<p>LANTERN splits variant dosages by local ancestry using one of two
-methods:</p>
+<p>lantern splits each sample’s alternate-allele dosage at a variant
+into one dosage per ancestral population. There are two ways to do
+this:</p>
 <table class="table">
 <colgroup>
-<col width="23%">
-<col width="26%">
-<col width="50%">
+<col width="15%">
+<col width="15%">
+<col width="69%">
 </colgroup>
 <thead><tr class="header">
 <th>Mode</th>
-<th>Input</th>
-<th>Splitting rule</th>
+<th>Uses</th>
+<th>How an allele is assigned</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td><strong>Unphased (dosage)</strong></td>
-<td>Genotype matrix + per-variant ancestry code</td>
-<td>Probabilistic (p1 … pK proportions estimated per variant)</td>
+<td>Phased (<code>"haplotype"</code>)</td>
+<td>the allele and the ancestry of each haplotype</td>
+<td>to the population of the haplotype that carries it</td>
 </tr>
 <tr class="even">
-<td><strong>Phased (haplotype)</strong></td>
-<td>Per-haplotype GT + per-haplotype ancestry</td>
-<td>Deterministic — no probability estimation</td>
+<td>Unphased (<code>"dosage"</code>)</td>
+<td>the genotype (0/1/2) and the pair of ancestries at the site</td>
+<td>shared by estimated proportions when the genotype is ambiguous</td>
 </tr>
 </tbody>
 </table>
-<p>This vignette builds intuition for both methods using small,
-hand-built matrices — no VCF or MSP files involved. Part A covers the
-two-population case; Part B generalizes to K ≥ 3 populations (the same
-functions, just with K-population inputs).</p>
-<ul>
-<li>For building the matrices from real VCF + MSP files, see
-<code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code>.</li>
-<li>For the full split → GDS → association pipeline on real data, see
-<code><a href="../articles/real-data-chr19.html">vignette("real-data-chr19")</a></code>.</li>
-</ul>
+<p>This vignette explains both on small matrices, without any files,
+using the low-level functions that <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> calls
+internally. Part A covers two populations, Part B any number of
+populations, and Part C the shrinkage that <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>
+applies to unphased splits. <code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code>
+shows the same splits starting from VCF and MSP files.</p>
 <hr>
 </div>
 <div class="section level2">
 <h2 id="part-a-two-populations">Part A: Two populations<a class="anchor" aria-label="anchor" href="#part-a-two-populations"></a>
 </h2>
 <div class="section level3">
-<h3 id="a-1-unphased-dosage-split-split_diploid">A.1 Unphased (dosage) split — <code>split_diploid()</code><a class="anchor" aria-label="anchor" href="#a-1-unphased-dosage-split-split_diploid"></a>
+<h3 id="a-1-unphased-split-with-split_diploid">A.1 Unphased split with <code>split_diploid()</code><a class="anchor" aria-label="anchor" href="#a-1-unphased-split-with-split_diploid"></a>
 </h3>
-<p><code><a href="../reference/split_diploid.html">split_diploid()</a></code> takes two matrices of identical
-dimensions:</p>
+<p>Without phase we only know, for each sample at a variant, its
+genotype (0, 1 or 2 alternate alleles) and its pair of ancestries, coded
+as</p>
 <ul>
-<li>
-<strong><code>gt_genotype</code></strong> — integer matrix, rows =
-variants, cols = samples. Values: 0 (hom-ref), 1 (het), 2
-(hom-alt).</li>
-<li>
-<strong><code>ancestry</code></strong> — integer matrix, same shape.
-Ancestry codes: <strong>1</strong> = EUR/EUR, <strong>2</strong> =
-AFR/EUR (mixed het), <strong>3</strong> = AFR/AFR.</li>
+<li>1 = EUR/EUR (both haplotypes European),</li>
+<li>2 = AFR/EUR (one of each),</li>
+<li>3 = AFR/AFR.</li>
 </ul>
-<p>The ancestry code summarises <em>both</em> haplotypes at the locus
-(e.g. from an RFMix MSP file collapsed into a per-variant diploid
-code).</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">42</span><span class="op">)</span></span>
-<span><span class="va">n_var</span>  <span class="op">&lt;-</span> <span class="fl">10</span>   <span class="co"># variants</span></span>
-<span><span class="va">n_samp</span> <span class="op">&lt;-</span> <span class="fl">6</span>    <span class="co"># samples</span></span>
-<span></span>
-<span><span class="co"># Simulate integer genotypes (0/1/2)</span></span>
-<span><span class="va">gt</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="va">n_var</span> <span class="op">*</span> <span class="va">n_samp</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.6</span>, <span class="fl">0.3</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">n_var</span>, ncol <span class="op">=</span> <span class="va">n_samp</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">gt</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"var"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_var</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">gt</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_samp</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Simulate ancestry codes (1=EUR, 2=MIX, 3=AFR)</span></span>
-<span><span class="va">anc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="va">n_var</span> <span class="op">*</span> <span class="va">n_samp</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.4</span>, <span class="fl">0.2</span>, <span class="fl">0.4</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">n_var</span>, ncol <span class="op">=</span> <span class="va">n_samp</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid.html">split_diploid</a></span><span class="op">(</span><span class="va">gt</span>, <span class="va">anc</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"African dosage (first 4 variants × 6 samples):\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; African dosage (first 4 variants × 6 samples):</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">result</span><span class="op">$</span><span class="va">african</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="op">]</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6]</span></span>
-<span><span class="co">#&gt; [1,]    2    0    2 1.00    0    0</span></span>
-<span><span class="co">#&gt; [2,]    1    0    0 0.00    0    0</span></span>
-<span><span class="co">#&gt; [3,]    0    0    0 0.00    0    0</span></span>
-<span><span class="co">#&gt; [4,]    1    0    2 0.67    0    1</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\nEuropean dosage (first 4 variants × 6 samples):\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; European dosage (first 4 variants × 6 samples):</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">result</span><span class="op">$</span><span class="va">european</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="op">]</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6]</span></span>
-<span><span class="co">#&gt; [1,]    0    0    0 0.00    0    0</span></span>
-<span><span class="co">#&gt; [2,]    1    1    0 1.00    0    0</span></span>
-<span><span class="co">#&gt; [3,]    0    2    2 0.00    0    0</span></span>
-<span><span class="co">#&gt; [4,]    0    0    0 0.33    2    0</span></span></code></pre></div>
-<p>For each variant the function computes ancestry-specific proportions
-<strong>p1</strong> (African) and <strong>p2</strong> (European) from
-the diploid counts across all samples:</p>
-<pre><code>p1 = (2·N_AA_hom + N_AA_het + N_MIX_hom) / denominator
-p2 = (N_MIX_hom + 2·N_EUR_hom + N_EUR_het) / denominator</code></pre>
-<p>where <code>denominator = total_alt_alleles − N_MIX_het</code>
-(mixed-het samples are assigned stochastically via p1/p2 rather than
-excluded from the denominator).</p>
-<p><strong>Ambiguous-dominated edge-case</strong>: when <em>all</em> alt
-alleles are carried by mixed-het individuals (the extreme case),
-<code><a href="../reference/split_diploid.html">split_diploid()</a></code> alone (no <code>gla</code> argument, its
-default) falls back to p1 = p2 = 0.5 to avoid dividing by zero. But the
-more general problem isn’t just this all-ambiguous extreme — it’s any
-variant where mixed-het carriers <em>dominate</em> the observations,
-even with one or two unambiguous carriers still present to compute a
-(misleadingly confident) ratio from. <strong>Part C below explains why
-that’s worth improving on, and how</strong>;
-<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> applies that improvement (GLA shrinkage)
-automatically.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># A variant where only mixed-het (code 2) samples carry the alt allele</span></span>
-<span><span class="va">gt_edge</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">1L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># three samples: het, ref, het</span></span>
-<span><span class="va">anc_edge</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">1L</span>, <span class="fl">2L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># all alt carriers are MIX</span></span>
-<span></span>
-<span><span class="va">r</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid.html">split_diploid</a></span><span class="op">(</span><span class="va">gt_edge</span>, <span class="va">anc_edge</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Singleton MIX case — p1 = p2 = 0.5\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Singleton MIX case — p1 = p2 = 0.5</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"African: "</span>, <span class="va">r</span><span class="op">$</span><span class="va">african</span>, <span class="st">"\nEuropean:"</span>, <span class="va">r</span><span class="op">$</span><span class="va">european</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; African:  0.5 0 0.5 </span></span>
-<span><span class="co">#&gt; European: 0.5 0 0.5</span></span></code></pre></div>
-<p>For matrices with mismatched samples or variant sets,
-<code><a href="../reference/ancestry_split_dosage.html">ancestry_split_dosage()</a></code> wraps <code><a href="../reference/split_diploid.html">split_diploid()</a></code>
-with automatic overlap handling and monomorphic filtering — see
-<code><a href="../reference/ancestry_split_dosage.html">?ancestry_split_dosage</a></code>.</p>
-</div>
-<div class="section level3">
-<h3 id="a-2-phased-haplotype-split-split_haplotype">A.2 Phased (haplotype) split — <code>split_haplotype()</code><a class="anchor" aria-label="anchor" href="#a-2-phased-haplotype-split-split_haplotype"></a>
-</h3>
-<p>When RFMix (or equivalent) provides <strong>per-haplotype</strong>
-local ancestry calls, LANTERN can deterministically assign each
-haplotype’s allele to the correct ancestry background. Inputs are four
-matrices of the same shape (variants × samples):</p>
+<p>For most samples the split is obvious. An AFR/AFR sample’s alleles
+are all African, and an AFR/EUR sample with genotype 2 has one allele on
+each haplotype, so one African and one European. The only ambiguous case
+is an AFR/EUR heterozygote: it has one alternate allele, and we cannot
+tell which haplotype carries it. The full rule:</p>
 <table class="table">
-<colgroup>
-<col width="43%">
-<col width="56%">
-</colgroup>
 <thead><tr class="header">
-<th>Argument</th>
-<th>Description</th>
+<th>Ancestry</th>
+<th align="center">Genotype</th>
+<th align="center">African dosage</th>
+<th align="center">European dosage</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td><code>gt_hap0</code></td>
-<td>integer 0/1 allele for haplotype 0</td>
+<td>AFR/AFR</td>
+<td align="center">2</td>
+<td align="center">2</td>
+<td align="center">0</td>
 </tr>
 <tr class="even">
-<td><code>gt_hap1</code></td>
-<td>integer 0/1 allele for haplotype 1</td>
+<td>AFR/AFR</td>
+<td align="center">1</td>
+<td align="center">1</td>
+<td align="center">0</td>
 </tr>
 <tr class="odd">
-<td><code>anc_hap0</code></td>
-<td>ancestry code for haplotype 0</td>
+<td>AFR/EUR</td>
+<td align="center">2</td>
+<td align="center">1</td>
+<td align="center">1</td>
 </tr>
 <tr class="even">
-<td><code>anc_hap1</code></td>
-<td>ancestry code for haplotype 1</td>
+<td><strong>AFR/EUR</strong></td>
+<td align="center"><strong>1</strong></td>
+<td align="center"><strong><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><annotation encoding="application/x-tex">p_\text{AFR}</annotation></semantics></math></strong></td>
+<td align="center"><strong><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><annotation encoding="application/x-tex">p_\text{EUR}</annotation></semantics></math></strong></td>
 </tr>
 <tr class="odd">
-<td><code>pop_codes</code></td>
-<td>named vector mapping <code>c(AFR=0L, EUR=1L)</code> (RFMix
-default)</td>
+<td>EUR/EUR</td>
+<td align="center">2</td>
+<td align="center">0</td>
+<td align="center">2</td>
+</tr>
+<tr class="even">
+<td>EUR/EUR</td>
+<td align="center">1</td>
+<td align="center">0</td>
+<td align="center">1</td>
 </tr>
 </tbody>
 </table>
+<p>Genotype 0 contributes nothing to either dosage. Only the highlighted
+row needs the proportions
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><annotation encoding="application/x-tex">p_\text{AFR}</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><mo>=</mo><mn>1</mn><mo>−</mo><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub></mrow><annotation encoding="application/x-tex">p_\text{EUR} = 1 -
+p_\text{AFR}</annotation></semantics></math>, which are estimated from
+the other rows as shown below.</p>
+<p>Consider a single variant in six samples:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">gt</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">2</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>              dimnames <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"var1"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">anc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">3</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>              dimnames <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"var1"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>genotype <span class="op">=</span> <span class="va">gt</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span>, ancestry <span class="op">=</span> <span class="va">anc</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;          S1 S2 S3 S4 S5 S6</span></span>
+<span><span class="co">#&gt; genotype  1  2  1  1  0  2</span></span>
+<span><span class="co">#&gt; ancestry  3  3  1  2  2  2</span></span></code></pre></div>
+<p>S1 and S2 are AFR/AFR carriers, S3 is a EUR/EUR carrier, S6 is an
+AFR/EUR homozygote and S4 is the one ambiguous AFR/EUR heterozygote. To
+split S4’s allele we estimate how this variant’s alternate alleles
+divide between African and European haplotypes, using only the
+unambiguous carriers. Writing
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">N</annotation></semantics></math>
+for the number of samples of a given ancestry and genotype,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><mo>=</mo><mfrac><mrow><mn>2</mn><msub><mi>N</mi><mtext mathvariant="normal">AFR/AFR, 2</mtext></msub><mo>+</mo><msub><mi>N</mi><mtext mathvariant="normal">AFR/AFR, 1</mtext></msub><mo>+</mo><msub><mi>N</mi><mtext mathvariant="normal">AFR/EUR, 2</mtext></msub></mrow><mi>D</mi></mfrac><mo>,</mo><mspace width="2.0em"></mspace><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><mo>=</mo><mfrac><mrow><msub><mi>N</mi><mtext mathvariant="normal">AFR/EUR, 2</mtext></msub><mo>+</mo><mn>2</mn><msub><mi>N</mi><mtext mathvariant="normal">EUR/EUR, 2</mtext></msub><mo>+</mo><msub><mi>N</mi><mtext mathvariant="normal">EUR/EUR, 1</mtext></msub></mrow><mi>D</mi></mfrac><mo>,</mo></mrow><annotation encoding="application/x-tex">
+p_\text{AFR} = \frac{2N_\text{AFR/AFR, 2} + N_\text{AFR/AFR, 1} + N_\text{AFR/EUR, 2}}{D},
+\qquad
+p_\text{EUR} = \frac{N_\text{AFR/EUR, 2} + 2N_\text{EUR/EUR, 2} + N_\text{EUR/EUR, 1}}{D},
+</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>D</mi><annotation encoding="application/x-tex">D</annotation></semantics></math>
+is the number of unambiguous alternate alleles, that is, all alternate
+alleles at the variant minus those of the ambiguous heterozygotes:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><mn>2</mn><msub><mi>N</mi><mtext mathvariant="normal">AFR/AFR, 2</mtext></msub><mo>+</mo><msub><mi>N</mi><mtext mathvariant="normal">AFR/AFR, 1</mtext></msub><mo>+</mo><mn>2</mn><msub><mi>N</mi><mtext mathvariant="normal">AFR/EUR, 2</mtext></msub><mo>+</mo><mn>2</mn><msub><mi>N</mi><mtext mathvariant="normal">EUR/EUR, 2</mtext></msub><mo>+</mo><msub><mi>N</mi><mtext mathvariant="normal">EUR/EUR, 1</mtext></msub><mi>.</mi></mrow><annotation encoding="application/x-tex">
+D = 2N_\text{AFR/AFR, 2} + N_\text{AFR/AFR, 1} + 2N_\text{AFR/EUR, 2}
+  + 2N_\text{EUR/EUR, 2} + N_\text{EUR/EUR, 1}.
+</annotation></semantics></math></p>
+<p>An AFR/EUR homozygote contributes one allele to each population. The
+ambiguous heterozygote then gets
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><annotation encoding="application/x-tex">p_\text{AFR}</annotation></semantics></math>
+of its allele as African dosage and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><annotation encoding="application/x-tex">p_\text{EUR}</annotation></semantics></math>
+as European dosage. For our variant:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">n</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">a</span>, <span class="va">g</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc</span> <span class="op">==</span> <span class="va">a</span> <span class="op">&amp;</span> <span class="va">gt</span> <span class="op">==</span> <span class="va">g</span><span class="op">)</span></span>
+<span><span class="va">D</span> <span class="op">&lt;-</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span> <span class="op">+</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">p_afr</span> <span class="op">&lt;-</span> <span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="va">D</span></span>
+<span><span class="va">p_eur</span> <span class="op">&lt;-</span> <span class="op">(</span><span class="fu">n</span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="va">D</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>D <span class="op">=</span> <span class="va">D</span>, p_AFR <span class="op">=</span> <span class="va">p_afr</span>, p_EUR <span class="op">=</span> <span class="va">p_eur</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         D     p_AFR     p_EUR </span></span>
+<span><span class="co">#&gt; 6.0000000 0.6666667 0.3333333</span></span></code></pre></div>
+<p><code><a href="../reference/split_diploid.html">split_diploid()</a></code> returns the two dosage matrices. S4’s
+allele is split 2/3 African and 1/3 European, and every other sample’s
+split is whole:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid.html">split_diploid</a></span><span class="op">(</span><span class="va">gt</span>, <span class="va">anc</span><span class="op">)</span></span>
+<span><span class="va">split_table</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="va">res</span><span class="op">$</span><span class="va">african</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span>, EUR <span class="op">=</span> <span class="va">res</span><span class="op">$</span><span class="va">european</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">split_table</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">gt</span><span class="op">)</span></span>
+<span><span class="va">split_table</span></span>
+<span><span class="co">#&gt;     S1 S2 S3        S4 S5 S6</span></span>
+<span><span class="co">#&gt; AFR  1  2  0 0.6666667  0  1</span></span>
+<span><span class="co">#&gt; EUR  0  0  1 0.3333333  0  1</span></span></code></pre></div>
+<p>If every carrier of a variant is an ambiguous heterozygote,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">D = 0</annotation></semantics></math>
+and the proportions cannot be estimated. <code><a href="../reference/split_diploid.html">split_diploid()</a></code>
+then splits each allele 1/2 and 1/2:</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># 3 variants × 4 samples</span></span>
-<span><span class="va">gt0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">1L</span>,   <span class="co"># variant 1: hap0 alleles for 3 samples</span></span>
-<span>                <span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">0L</span>,   <span class="co"># variant 2</span></span>
-<span>                <span class="fl">1L</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span>,  <span class="co"># variant 3</span></span>
-<span>              nrow <span class="op">=</span> <span class="fl">3</span>, ncol <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">gt1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">0L</span>,</span>
-<span>                <span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">1L</span>,</span>
-<span>                <span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">1L</span><span class="op">)</span>,</span>
-<span>              nrow <span class="op">=</span> <span class="fl">3</span>, ncol <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Haplotype ancestry: 0 = AFR, 1 = EUR  (RFMix convention)</span></span>
-<span><span class="va">a0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="fl">0L</span>, <span class="fl">1L</span>,</span>
-<span>               <span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">0L</span>,</span>
-<span>               <span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span>,</span>
-<span>             nrow <span class="op">=</span> <span class="fl">3</span>, ncol <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">a1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">1L</span>, <span class="fl">0L</span>,</span>
-<span>               <span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">1L</span>,</span>
-<span>               <span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">1L</span><span class="op">)</span>,</span>
-<span>             nrow <span class="op">=</span> <span class="fl">3</span>, ncol <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">phased_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype.html">split_haplotype</a></span><span class="op">(</span><span class="va">gt0</span>, <span class="va">gt1</span>, <span class="va">a0</span>, <span class="va">a1</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"African dosage (phased):\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">phased_result</span><span class="op">$</span><span class="va">african</span><span class="op">)</span></span>
-<span><span class="co">#&gt; African dosage (phased):</span></span>
+<code class="sourceCode R"><span><span class="va">gt_edge</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">anc_edge</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/split_diploid.html">split_diploid</a></span><span class="op">(</span><span class="va">gt_edge</span>, <span class="va">anc_edge</span><span class="op">)</span></span>
+<span><span class="co">#&gt; $african</span></span>
+<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
+<span><span class="co">#&gt; [1,]  0.5    0  0.5</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $european</span></span>
+<span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
+<span><span class="co">#&gt; [1,]  0.5    0  0.5</span></span></code></pre></div>
+<p>Part C shows that estimates from very few unambiguous carriers are
+also unreliable, and how <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> handles that.</p>
+</div>
+<div class="section level3">
+<h3 id="a-2-phased-split-with-split_haplotype">A.2 Phased split with <code>split_haplotype()</code><a class="anchor" aria-label="anchor" href="#a-2-phased-split-with-split_haplotype"></a>
+</h3>
+<p>With phased genotypes and local ancestry for each haplotype, nothing
+needs to be estimated: each haplotype’s allele goes to that haplotype’s
+population. <code><a href="../reference/split_haplotype.html">split_haplotype()</a></code> takes four matrices of the
+same shape (variants x samples): the alleles (0/1) on haplotype 0 and on
+haplotype 1, and the ancestry of each haplotype, with RFMix’s codes 0 =
+AFR and 1 = EUR.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">ids</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"var"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">gt0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span>,  <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">0</span>,  <span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">0</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">3</span>, dimnames <span class="op">=</span> <span class="va">ids</span><span class="op">)</span></span>
+<span><span class="va">gt1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">0</span>,  <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span>,  <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">3</span>, dimnames <span class="op">=</span> <span class="va">ids</span><span class="op">)</span></span>
+<span><span class="va">a0</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0</span>, <span class="fl">1</span>,  <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">0</span>,  <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">0</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">3</span>, dimnames <span class="op">=</span> <span class="va">ids</span><span class="op">)</span></span>
+<span><span class="va">a1</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">0</span>,  <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">1</span>,  <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">3</span>, dimnames <span class="op">=</span> <span class="va">ids</span><span class="op">)</span></span></code></pre></div>
+<p>Take S1 at <code>var1</code>: haplotype 0 carries the allele
+(<code>gt0</code> is 1) and is African (<code>a0</code> is 0), and
+haplotype 1 does not carry it. So S1 has an African dosage of 1 and a
+European dosage of 0 at <code>var1</code>.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">phased</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype.html">split_haplotype</a></span><span class="op">(</span><span class="va">gt0</span>, <span class="va">gt1</span>, <span class="va">a0</span>, <span class="va">a1</span><span class="op">)</span></span>
+<span><span class="va">phased</span><span class="op">$</span><span class="va">african</span></span>
 <span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
 <span><span class="co">#&gt; [1,]    1    1    1</span></span>
 <span><span class="co">#&gt; [2,]    0    1    1</span></span>
 <span><span class="co">#&gt; [3,]    0    0    0</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"European dosage (phased):\n"</span><span class="op">)</span>; <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">phased_result</span><span class="op">$</span><span class="va">european</span><span class="op">)</span></span>
-<span><span class="co">#&gt; European dosage (phased):</span></span>
+<span><span class="va">phased</span><span class="op">$</span><span class="va">european</span></span>
 <span><span class="co">#&gt;      [,1] [,2] [,3]</span></span>
 <span><span class="co">#&gt; [1,]    0    0    0</span></span>
 <span><span class="co">#&gt; [2,]    1    0    1</span></span>
 <span><span class="co">#&gt; [3,]    1    1    1</span></span></code></pre></div>
-<p>The rule is simple: for each cell, hap0 contributes its allele to the
-AFR count if <code>anc_hap0 == 0</code>, to EUR if
-<code>anc_hap0 == 1</code>, and nothing otherwise. Same for hap1 — no
-probability estimation, just bookkeeping.</p>
+<p>The two dosages always add up to the genotype,
+<code>gt0 + gt1</code>:</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="va">phased</span><span class="op">$</span><span class="va">african</span> <span class="op">+</span> <span class="va">phased</span><span class="op">$</span><span class="va">european</span>, <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">gt0</span> <span class="op">+</span> <span class="va">gt1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <hr>
 </div>
 </div>
@@ -326,41 +328,20 @@ probability estimation, just bookkeeping.</p>
 <h2 id="part-b-more-than-two-populations">Part B: More than two populations<a class="anchor" aria-label="anchor" href="#part-b-more-than-two-populations"></a>
 </h2>
 <p><code><a href="../reference/split_diploid_multi.html">split_diploid_multi()</a></code> and
-<code><a href="../reference/split_haplotype_multi.html">split_haplotype_multi()</a></code> generalize Part A’s functions to K
-≥ 2 populations. K = 2 is numerically identical to
-<code><a href="../reference/split_diploid.html">split_diploid()</a></code>/<code><a href="../reference/split_haplotype.html">split_haplotype()</a></code> — see
-<code><a href="../reference/split_diploid_multi.html">?split_diploid_multi</a></code> for a worked equivalence check.</p>
+<code><a href="../reference/split_haplotype_multi.html">split_haplotype_multi()</a></code> do the same for any number of
+populations K. With two populations they give the same results as the
+functions in Part A.</p>
 <div class="section level3">
-<h3 id="b-1-unphased-dosage-split-split_diploid_multi">B.1 Unphased (dosage) split —
-<code>split_diploid_multi()</code><a class="anchor" aria-label="anchor" href="#b-1-unphased-dosage-split-split_diploid_multi"></a>
+<h3 id="b-1-unphased-split-with-split_diploid_multi">B.1 Unphased split with <code>split_diploid_multi()</code><a class="anchor" aria-label="anchor" href="#b-1-unphased-split-with-split_diploid_multi"></a>
 </h3>
-<p>The diploid ancestry code for K populations encodes which combination
-of two parental backgrounds is present. You supply two objects:</p>
-<ul>
-<li>
-<p><strong><code>pure_codes</code></strong> — named integer vector,
-one entry per population:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">4L</span><span class="op">)</span></span></code></pre></div>
-</li>
-<li>
-<p><strong><code>mixed_codes</code></strong> — data frame with
-columns <code>code</code>, <code>pop1</code>, <code>pop2</code>. One row
-per mixed-ancestry diploid type:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  code <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">5L</span>, <span class="fl">6L</span><span class="op">)</span>,</span>
-<span>  pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"AFR"</span>, <span class="st">"EUR"</span><span class="op">)</span>,</span>
-<span>  pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>, <span class="st">"NAT"</span>, <span class="st">"NAT"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-</li>
-</ul>
-<p>For K populations there are K(K−1)/2 mixed-pair types:</p>
+<p>With K populations a sample’s pair of ancestries is either pure (both
+haplotypes from the same population) or mixed (from two different
+populations). There are K pure and K(K-1)/2 mixed combinations:</p>
 <table class="table">
 <thead><tr class="header">
 <th>K</th>
-<th>Pure types</th>
-<th>Mixed pairs</th>
+<th>Pure</th>
+<th>Mixed</th>
 <th>Total codes</th>
 </tr></thead>
 <tbody>
@@ -382,385 +363,232 @@ per mixed-ancestry diploid type:</p>
 <td>6</td>
 <td>10</td>
 </tr>
-<tr class="even">
-<td>5</td>
-<td>5</td>
-<td>10</td>
-<td>15</td>
-</tr>
 </tbody>
 </table>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2025</span><span class="op">)</span></span>
-<span><span class="va">N_VAR</span>  <span class="op">&lt;-</span> <span class="fl">12</span>   <span class="co"># variants</span></span>
-<span><span class="va">N_SAMP</span> <span class="op">&lt;-</span> <span class="fl">30</span>   <span class="co"># samples</span></span>
-<span></span>
-<span><span class="co"># Ancestry code system</span></span>
-<span><span class="co">#   Pure:  AFR=3, EUR=1, NAT=4</span></span>
-<span><span class="co">#   Mixed: AFR/EUR=2, AFR/NAT=5, EUR/NAT=6</span></span>
-<span><span class="va">pure_codes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">4L</span><span class="op">)</span></span>
-<span><span class="va">mixed_codes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  code <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>,    <span class="fl">5L</span>,    <span class="fl">6L</span>   <span class="op">)</span>,</span>
-<span>  pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"AFR"</span>, <span class="st">"EUR"</span><span class="op">)</span>,</span>
-<span>  pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>, <span class="st">"NAT"</span>, <span class="st">"NAT"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Simulate rare-variant genotype matrix (mostly 0, rare 1/2)</span></span>
-<span><span class="va">gt3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="va">N_VAR</span> <span class="op">*</span> <span class="va">N_SAMP</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.88</span>, <span class="fl">0.10</span>, <span class="fl">0.02</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR</span>, ncol <span class="op">=</span> <span class="va">N_SAMP</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">gt3</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"chr19:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">1e6</span>, by <span class="op">=</span> <span class="fl">500L</span>, length.out <span class="op">=</span> <span class="va">N_VAR</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">gt3</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"S"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"%02d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">N_SAMP</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Simulate ancestry codes reflecting a tri-admixed cohort</span></span>
-<span><span class="co">#   Roughly: 30% AFR, 20% EUR, 10% NAT, 20% AFR/EUR, 10% AFR/NAT, 10% EUR/NAT</span></span>
-<span><span class="va">all_codes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">$</span><span class="va">code</span><span class="op">)</span></span>
-<span><span class="va">code_probs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.30</span>, <span class="fl">0.20</span>, <span class="fl">0.10</span>, <span class="fl">0.20</span>, <span class="fl">0.10</span>, <span class="fl">0.10</span><span class="op">)</span></span>
-<span><span class="va">anc3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">all_codes</span>, <span class="va">N_VAR</span> <span class="op">*</span> <span class="va">N_SAMP</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="va">code_probs</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR</span>, ncol <span class="op">=</span> <span class="va">N_SAMP</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt3</span>, <span class="va">anc3</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Output list names:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">out</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Output list names: AFR EUR NAT</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Dimensions (each matrix):"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, <span class="st">"variants x"</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">ncol</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, <span class="st">"samples\n\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Dimensions (each matrix): 12 variants x 30 samples</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"AFR dosage (first 4 variants, 6 samples):\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; AFR dosage (first 4 variants, 6 samples):</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      [,1] [,2]  [,3] [,4] [,5] [,6]</span></span>
-<span><span class="co">#&gt; [1,]    0    0 0.000    0    0    0</span></span>
-<span><span class="co">#&gt; [2,]    0    0 0.667    0    0    0</span></span>
-<span><span class="co">#&gt; [3,]    0    0 0.000    1    0    0</span></span>
-<span><span class="co">#&gt; [4,]    0    0 0.000    0    0    0</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"EUR dosage (first 4 variants, 6 samples):\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; EUR dosage (first 4 variants, 6 samples):</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">EUR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      [,1] [,2]  [,3] [,4] [,5] [,6]</span></span>
-<span><span class="co">#&gt; [1,]    0    0 0.000    0    0    0</span></span>
-<span><span class="co">#&gt; [2,]    0    0 0.333    0    0    0</span></span>
-<span><span class="co">#&gt; [3,]    0    0 0.000    1    0    1</span></span>
-<span><span class="co">#&gt; [4,]    0    0 0.000    1    0    0</span></span>
-<span></span>
-<span><span class="co"># Conservation check: per-element sum across pools never exceeds raw gt</span></span>
-<span><span class="va">total</span> <span class="op">&lt;-</span> <span class="va">out</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">out</span><span class="op">$</span><span class="va">EUR</span> <span class="op">+</span> <span class="va">out</span><span class="op">$</span><span class="va">NAT</span></span>
-<span><span class="va">excess</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">total</span> <span class="op">-</span> <span class="va">gt3</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\nMax excess of pooled dosage over raw gt:"</span>, <span class="va">excess</span>,</span>
-<span>    <span class="st">"(must be &lt;= 0)\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Max excess of pooled dosage over raw gt: 0 (must be &lt;= 0)</span></span></code></pre></div>
-<p><strong>How p1, p2, p3 are estimated.</strong> For each variant, the
-function estimates population allele proportions from
-<strong>unambiguous observations</strong> only (pure-ancestry samples of
-any genotype, plus mixed hom-alts which each contribute one alt allele
-to each parent pool). Ambiguous mixed-ancestry heterozygotes are
-excluded from the estimation and then split using the result.</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi><mo>=</mo><munder><mo>∑</mo><mi>k</mi></munder><mo minsize="120%" maxsize="120%" stretchy="true" form="prefix">(</mo><mn>2</mn><msubsup><mi>N</mi><mrow><mi>k</mi><mi>k</mi></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup><mo>+</mo><msubsup><mi>N</mi><mrow><mi>k</mi><mi>k</mi></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup><mo minsize="120%" maxsize="120%" stretchy="true" form="postfix">)</mo><mo>+</mo><mn>2</mn><munder><mo>∑</mo><mrow><mi>i</mi><mo>&lt;</mo><mi>j</mi></mrow></munder><msubsup><mi>N</mi><mrow><mi>i</mi><mi>j</mi></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup></mrow><annotation encoding="application/x-tex">D = \sum_{k} \bigl(2N_{kk}^{(2)} + N_{kk}^{(1)}\bigr) + 2\sum_{i&lt;j} N_{ij}^{(2)}</annotation></semantics></math></p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>k</mi></msub><mo>=</mo><mfrac><mrow><mn>2</mn><msubsup><mi>N</mi><mrow><mi>k</mi><mi>k</mi></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup><mo>+</mo><msubsup><mi>N</mi><mrow><mi>k</mi><mi>k</mi></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup><mo>+</mo><munder><mo>∑</mo><mrow><mi>j</mi><mo>≠</mo><mi>k</mi></mrow></munder><msubsup><mi>N</mi><mrow><mo stretchy="false" form="prefix">⟨</mo><mi>k</mi><mi>j</mi><mo stretchy="false" form="postfix">⟩</mo></mrow><mrow><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup></mrow><mi>D</mi></mfrac><mo>,</mo><mspace width="1.0em"></mspace><munder><mo>∑</mo><mi>k</mi></munder><msub><mi>p</mi><mi>k</mi></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">p_k = \frac{2N_{kk}^{(2)} + N_{kk}^{(1)} + \sum_{j \neq k} N_{\langle kj \rangle}^{(2)}}{D}, \quad \sum_k p_k = 1</annotation></semantics></math></p>
-<p>A mixed-ancestry heterozygote in pair (i, j) then receives:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p_i/(p_i+p_j)</annotation></semantics></math>
-of its dosage in pool i and
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>j</mi></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p_j/(p_i+p_j)</annotation></semantics></math>
-in pool j.</p>
+<p>You choose a code for each combination and pass two descriptions to
+the function: <code>pure_codes</code>, the code of each pure
+combination, and <code>mixed_codes</code>, a table with the code and the
+two populations of each mixed combination. For three populations
+(African, European and Native American):</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Trace p_k for a single variant by hand</span></span>
-<span><span class="va">var_idx</span> <span class="op">&lt;-</span> <span class="fl">3</span>   <span class="co"># pick variant 3</span></span>
-<span></span>
-<span><span class="va">gt_v</span>   <span class="op">&lt;-</span> <span class="va">gt3</span><span class="op">[</span><span class="va">var_idx</span>, <span class="op">]</span></span>
-<span><span class="va">anc_v</span>  <span class="op">&lt;-</span> <span class="va">anc3</span><span class="op">[</span><span class="va">var_idx</span>, <span class="op">]</span></span>
-<span></span>
-<span><span class="co"># Pure AFR (code 3)</span></span>
-<span><span class="va">N_AA2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">3</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">N_AA1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">3</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co"># Pure EUR (code 1)</span></span>
-<span><span class="va">N_EE2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">1</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">N_EE1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">1</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co"># Pure NAT (code 4)</span></span>
-<span><span class="va">N_NN2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">4</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">N_NN1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">4</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co"># Mixed hom-alts</span></span>
-<span><span class="va">N_AE2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">2</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">N_AN2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">5</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">N_EN2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">anc_v</span> <span class="op">==</span> <span class="fl">6</span> <span class="op">&amp;</span> <span class="va">gt_v</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">D</span>  <span class="op">&lt;-</span> <span class="fl">2</span><span class="op">*</span><span class="va">N_AA2</span> <span class="op">+</span> <span class="va">N_AA1</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N_EE2</span> <span class="op">+</span> <span class="va">N_EE1</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N_NN2</span> <span class="op">+</span> <span class="va">N_NN1</span> <span class="op">+</span></span>
-<span>      <span class="fl">2</span><span class="op">*</span><span class="va">N_AE2</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N_AN2</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N_EN2</span></span>
-<span><span class="va">p1</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="va">D</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span> <span class="op">(</span><span class="fl">2</span><span class="op">*</span><span class="va">N_AA2</span> <span class="op">+</span> <span class="va">N_AA1</span> <span class="op">+</span> <span class="va">N_AE2</span> <span class="op">+</span> <span class="va">N_AN2</span><span class="op">)</span> <span class="op">/</span> <span class="va">D</span> <span class="kw">else</span> <span class="fl">0.5</span></span>
-<span><span class="va">p2</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="va">D</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span> <span class="op">(</span><span class="fl">2</span><span class="op">*</span><span class="va">N_EE2</span> <span class="op">+</span> <span class="va">N_EE1</span> <span class="op">+</span> <span class="va">N_AE2</span> <span class="op">+</span> <span class="va">N_EN2</span><span class="op">)</span> <span class="op">/</span> <span class="va">D</span> <span class="kw">else</span> <span class="fl">0.5</span></span>
-<span><span class="va">p3</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="va">D</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span> <span class="op">(</span><span class="fl">2</span><span class="op">*</span><span class="va">N_NN2</span> <span class="op">+</span> <span class="va">N_NN1</span> <span class="op">+</span> <span class="va">N_AN2</span> <span class="op">+</span> <span class="va">N_EN2</span><span class="op">)</span> <span class="op">/</span> <span class="va">D</span> <span class="kw">else</span> <span class="fl">0.5</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Variant %d  D=%d  p_AFR=%.3f  p_EUR=%.3f  p_NAT=%.3f\n"</span>,</span>
-<span>            <span class="va">var_idx</span>, <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">D</span><span class="op">)</span>, <span class="va">p1</span>, <span class="va">p2</span>, <span class="va">p3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Variant 3  D=5  p_AFR=0.600  p_EUR=0.400  p_NAT=0.000</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"p1+p2+p3 ="</span>, <span class="va">p1</span> <span class="op">+</span> <span class="va">p2</span> <span class="op">+</span> <span class="va">p3</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; p1+p2+p3 = 1</span></span></code></pre></div>
-<p><strong>Ambiguous-dominated edge case.</strong> When the denominator
-D = 0 for a given variant (all alt alleles are carried exclusively by
-mixed-ancestry heterozygotes, with no pure-ancestry or mixed hom-alt alt
-alleles), <code><a href="../reference/split_diploid_multi.html">split_diploid_multi()</a></code> alone (no <code>gla</code>
-argument, its default) falls back to a 50/50 split within each affected
-pair. That’s the extreme case, but the same unreliability shows up
-whenever mixed-het carriers dominate the count even with D &gt; 0 — Part
-C revisits both.</p>
+<code class="sourceCode R"><span><span class="va">pure_codes</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">4L</span><span class="op">)</span></span>
+<span><span class="va">mixed_codes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>code <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">5L</span>, <span class="fl">6L</span><span class="op">)</span>,</span>
+<span>                          pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"AFR"</span>, <span class="st">"EUR"</span><span class="op">)</span>,</span>
+<span>                          pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>, <span class="st">"NAT"</span>, <span class="st">"NAT"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">mixed_codes</span></span>
+<span><span class="co">#&gt;   code pop1 pop2</span></span>
+<span><span class="co">#&gt; 1    2  AFR  EUR</span></span>
+<span><span class="co">#&gt; 2    5  AFR  NAT</span></span>
+<span><span class="co">#&gt; 3    6  EUR  NAT</span></span></code></pre></div>
+<p>We simulate 12 rare variants in 30 samples from a three-way admixed
+group:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># One sample, one variant: AFR/EUR mixed het, no other data</span></span>
-<span><span class="va">gt_s</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1L</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">anc_s</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">2L</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># code 2 = AFR/EUR</span></span>
-<span><span class="va">r_s</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_s</span>, <span class="va">anc_s</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Singleton AFR/EUR het -&gt; AFR:"</span>, <span class="va">r_s</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>,</span>
-<span>    <span class="st">" EUR:"</span>, <span class="va">r_s</span><span class="op">$</span><span class="va">EUR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>,</span>
-<span>    <span class="st">" NAT:"</span>, <span class="va">r_s</span><span class="op">$</span><span class="va">NAT</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Singleton AFR/EUR het -&gt; AFR: 0.5  EUR: 0.5  NAT: 0</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2025</span><span class="op">)</span></span>
+<span><span class="va">gt3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">12</span> <span class="op">*</span> <span class="fl">30</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.88</span>, <span class="fl">0.10</span>, <span class="fl">0.02</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>              nrow <span class="op">=</span> <span class="fl">12</span>, ncol <span class="op">=</span> <span class="fl">30</span><span class="op">)</span></span>
+<span><span class="va">anc3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">$</span><span class="va">code</span><span class="op">)</span>, <span class="fl">12</span> <span class="op">*</span> <span class="fl">30</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>                      prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.30</span>, <span class="fl">0.20</span>, <span class="fl">0.10</span>, <span class="fl">0.20</span>, <span class="fl">0.10</span>, <span class="fl">0.10</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>               nrow <span class="op">=</span> <span class="fl">12</span>, ncol <span class="op">=</span> <span class="fl">30</span><span class="op">)</span></span>
+<span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt3</span>, <span class="va">anc3</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">out</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "AFR" "EUR" "NAT"</span></span></code></pre></div>
+<p>The estimate works as in A.1, with one proportion per population.
+Pure carriers count for their population and mixed homozygotes
+contribute one allele to each of their two populations. With
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>N</mi><mrow><mi>k</mi><mo>,</mo><mi>g</mi></mrow></msub><annotation encoding="application/x-tex">N_{k,g}</annotation></semantics></math>
+the number of pure
+population-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
+samples with genotype
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>g</mi><annotation encoding="application/x-tex">g</annotation></semantics></math>,
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>N</mi><mrow><mo stretchy="false" form="prefix">{</mo><mi>k</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">}</mo><mo>,</mo><mn>2</mn></mrow></msub><annotation encoding="application/x-tex">N_{\{k,j\},2}</annotation></semantics></math>
+the number of mixed
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>/<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>
+homozygotes,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>k</mi></msub><mo>=</mo><mfrac><mrow><mn>2</mn><msub><mi>N</mi><mrow><mi>k</mi><mo>,</mo><mn>2</mn></mrow></msub><mo>+</mo><msub><mi>N</mi><mrow><mi>k</mi><mo>,</mo><mn>1</mn></mrow></msub><mo>+</mo><munder><mo>∑</mo><mrow><mi>j</mi><mo>≠</mo><mi>k</mi></mrow></munder><msub><mi>N</mi><mrow><mo stretchy="false" form="prefix">{</mo><mi>k</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">}</mo><mo>,</mo><mn>2</mn></mrow></msub></mrow><mi>D</mi></mfrac><mo>,</mo><mspace width="2.0em"></mspace><mi>D</mi><mo>=</mo><munder><mo>∑</mo><mi>k</mi></munder><mrow><mo stretchy="true" form="prefix">(</mo><mn>2</mn><msub><mi>N</mi><mrow><mi>k</mi><mo>,</mo><mn>2</mn></mrow></msub><mo>+</mo><msub><mi>N</mi><mrow><mi>k</mi><mo>,</mo><mn>1</mn></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>+</mo><mn>2</mn><munder><mo>∑</mo><mrow><mi>k</mi><mo>&lt;</mo><mi>j</mi></mrow></munder><msub><mi>N</mi><mrow><mo stretchy="false" form="prefix">{</mo><mi>k</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">}</mo><mo>,</mo><mn>2</mn></mrow></msub><mo>,</mo></mrow><annotation encoding="application/x-tex">
+p_k = \frac{2N_{k,2} + N_{k,1} + \sum_{j \ne k} N_{\{k,j\},2}}{D},
+\qquad
+D = \sum_k \left(2N_{k,2} + N_{k,1}\right) + 2\sum_{k&lt;j} N_{\{k,j\},2},
+</annotation></semantics></math></p>
+<p>so the
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>p</mi><mi>k</mi></msub><annotation encoding="application/x-tex">p_k</annotation></semantics></math>
+add up to 1. An ambiguous heterozygote with ancestries
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>
+then gets
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p_i / (p_i + p_j)</annotation></semantics></math>
+of its allele in population
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>j</mi></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p_j / (p_i + p_j)</annotation></semantics></math>
+in population
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>.</p>
+<p>To check this, we take the first variant with an ambiguous AFR/EUR
+heterozygote and compute the proportions by hand:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">v</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/which.html" class="external-link">which</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowSums</a></span><span class="op">(</span><span class="va">anc3</span> <span class="op">==</span> <span class="fl">2</span> <span class="op">&amp;</span> <span class="va">gt3</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span></span>
+<span><span class="va">g</span> <span class="op">&lt;-</span> <span class="va">gt3</span><span class="op">[</span><span class="va">v</span>, <span class="op">]</span></span>
+<span><span class="va">a</span> <span class="op">&lt;-</span> <span class="va">anc3</span><span class="op">[</span><span class="va">v</span>, <span class="op">]</span></span>
+<span><span class="va">n</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">code</span>, <span class="va">genotype</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">a</span> <span class="op">==</span> <span class="va">code</span> <span class="op">&amp;</span> <span class="va">g</span> <span class="op">==</span> <span class="va">genotype</span><span class="op">)</span></span>
+<span><span class="va">num</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span>,</span>
+<span>         EUR <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">6</span>, <span class="fl">2</span><span class="op">)</span>,</span>
+<span>         NAT <span class="op">=</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">n</span><span class="op">(</span><span class="fl">4</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">4</span>, <span class="fl">1</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span> <span class="op">+</span> <span class="fu">n</span><span class="op">(</span><span class="fl">6</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">p</span> <span class="op">&lt;-</span> <span class="va">num</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">num</span><span class="op">)</span>   <span class="co"># sum(num) equals D</span></span>
+<span><span class="va">p</span></span>
+<span><span class="co">#&gt; AFR EUR NAT </span></span>
+<span><span class="co">#&gt; 0.4 0.2 0.4</span></span></code></pre></div>
+<p>The heterozygote’s African share should be
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>p</mi><mtext mathvariant="normal">AFR</mtext></msub><mo>+</mo><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p_\text{AFR} / (p_\text{AFR}
++ p_\text{EUR})</annotation></semantics></math>, which matches the
+function’s output:</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">s</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/which.html" class="external-link">which</a></span><span class="op">(</span><span class="va">a</span> <span class="op">==</span> <span class="fl">2</span> <span class="op">&amp;</span> <span class="va">g</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>by_hand  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">p</span><span class="op">[</span><span class="st">"AFR"</span><span class="op">]</span> <span class="op">/</span> <span class="op">(</span><span class="va">p</span><span class="op">[</span><span class="st">"AFR"</span><span class="op">]</span> <span class="op">+</span> <span class="va">p</span><span class="op">[</span><span class="st">"EUR"</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  lantern  <span class="op">=</span> <span class="va">out</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="va">v</span>, <span class="va">s</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   by_hand   lantern </span></span>
+<span><span class="co">#&gt; 0.6666667 0.6666667</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="b-2-phased-haplotype-split-split_haplotype_multi">B.2 Phased (haplotype) split —
-<code>split_haplotype_multi()</code><a class="anchor" aria-label="anchor" href="#b-2-phased-haplotype-split-split_haplotype_multi"></a>
+<h3 id="b-2-phased-split-with-split_haplotype_multi">B.2 Phased split with <code>split_haplotype_multi()</code><a class="anchor" aria-label="anchor" href="#b-2-phased-split-with-split_haplotype_multi"></a>
 </h3>
-<p>When per-haplotype ancestry calls are available (e.g. from RFMix),
-the split is <strong>deterministic</strong>: each haplotype’s allele
-goes directly to its population pool. No probability estimation is
-needed. <code><a href="../reference/split_haplotype_multi.html">split_haplotype_multi()</a></code> takes a single named
-integer vector <code>pop_codes</code> of length K, matching the codes
-used in the MSP file (RFMix default: 0-based integers).</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pop_codes_phased</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">0L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">2L</span><span class="op">)</span></span>
+<p>The phased split needs only the code of each population, as used in
+the MSP file (RFMix numbers populations from 0):</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2025</span><span class="op">)</span></span>
+<span><span class="va">hap0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fl">8</span> <span class="op">*</span> <span class="fl">6</span>, <span class="fl">1</span>, <span class="fl">0.1</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
+<span><span class="va">hap1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fl">8</span> <span class="op">*</span> <span class="fl">6</span>, <span class="fl">1</span>, <span class="fl">0.1</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
+<span><span class="va">anc0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">8</span> <span class="op">*</span> <span class="fl">6</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.4</span>, <span class="fl">0.4</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
+<span><span class="va">anc1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">8</span> <span class="op">*</span> <span class="fl">6</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.4</span>, <span class="fl">0.4</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">8</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2025</span><span class="op">)</span></span>
-<span><span class="va">N_VAR2</span>  <span class="op">&lt;-</span> <span class="fl">8</span></span>
-<span><span class="va">N_SAMP2</span> <span class="op">&lt;-</span> <span class="fl">6</span></span>
-<span></span>
-<span><span class="co"># Per-haplotype allele matrices (0/1)</span></span>
-<span><span class="va">gt_hap0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">1</span>, <span class="va">N_VAR2</span> <span class="op">*</span> <span class="va">N_SAMP2</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.9</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR2</span>, ncol <span class="op">=</span> <span class="va">N_SAMP2</span></span>
-<span><span class="op">)</span></span>
-<span><span class="va">gt_hap1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">1</span>, <span class="va">N_VAR2</span> <span class="op">*</span> <span class="va">N_SAMP2</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.9</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR2</span>, ncol <span class="op">=</span> <span class="va">N_SAMP2</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Per-haplotype ancestry codes (0=AFR, 1=EUR, 2=NAT)</span></span>
-<span><span class="va">anc_hap0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="va">N_VAR2</span> <span class="op">*</span> <span class="va">N_SAMP2</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.4</span>, <span class="fl">0.4</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR2</span>, ncol <span class="op">=</span> <span class="va">N_SAMP2</span></span>
-<span><span class="op">)</span></span>
-<span><span class="va">anc_hap1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="va">N_VAR2</span> <span class="op">*</span> <span class="va">N_SAMP2</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.4</span>, <span class="fl">0.4</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  nrow <span class="op">=</span> <span class="va">N_VAR2</span>, ncol <span class="op">=</span> <span class="va">N_SAMP2</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">phased_out</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype_multi.html">split_haplotype_multi</a></span><span class="op">(</span><span class="va">gt_hap0</span>, <span class="va">gt_hap1</span>,</span>
-<span>                                  <span class="va">anc_hap0</span>, <span class="va">anc_hap1</span>,</span>
-<span>                                  <span class="va">pop_codes_phased</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Output names:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">phased_out</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Output names: AFR EUR NAT</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"AFR dosage (first 4 variants):\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; AFR dosage (first 4 variants):</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">phased_out</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">phased3</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype_multi.html">split_haplotype_multi</a></span><span class="op">(</span><span class="va">hap0</span>, <span class="va">hap1</span>, <span class="va">anc0</span>, <span class="va">anc1</span>,</span>
+<span>                                 pop_codes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">0L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">2L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">phased3</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">4</span>, <span class="op">]</span></span>
 <span><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6]</span></span>
 <span><span class="co">#&gt; [1,]    0    0    0    0    0    0</span></span>
 <span><span class="co">#&gt; [2,]    0    0    0    1    0    0</span></span>
 <span><span class="co">#&gt; [3,]    0    0    0    0    0    0</span></span>
-<span><span class="co">#&gt; [4,]    0    1    0    0    0    0</span></span>
-<span></span>
-<span><span class="co"># Exact reconstruction: AFR + EUR + NAT == hap0 + hap1 everywhere</span></span>
-<span><span class="va">raw_diploid</span> <span class="op">&lt;-</span> <span class="va">gt_hap0</span> <span class="op">+</span> <span class="va">gt_hap1</span></span>
-<span><span class="va">recon_error</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="op">(</span><span class="va">phased_out</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">phased_out</span><span class="op">$</span><span class="va">EUR</span> <span class="op">+</span> <span class="va">phased_out</span><span class="op">$</span><span class="va">NAT</span><span class="op">)</span> <span class="op">-</span></span>
-<span>                         <span class="va">raw_diploid</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Max reconstruction error:"</span>, <span class="va">recon_error</span>, <span class="st">"(must be 0)\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Max reconstruction error: 0 (must be 0)</span></span></code></pre></div>
-<p>The phased function is exact because every haplotype allele goes to
-exactly one pool; there is no probabilistic component.</p>
-<p><code><a href="../reference/split_haplotype_multi.html">split_haplotype_multi()</a></code> with K = 2 is numerically
-identical to <code><a href="../reference/split_haplotype.html">split_haplotype()</a></code>:</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pop2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">0L</span>, EUR <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span><span class="va">gt0b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>,<span class="fl">0L</span>,<span class="fl">1L</span>,<span class="fl">0L</span><span class="op">)</span>, <span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">gt1b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>,<span class="fl">1L</span>,<span class="fl">0L</span>,<span class="fl">1L</span><span class="op">)</span>, <span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">a0b</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>,<span class="fl">1L</span>,<span class="fl">0L</span>,<span class="fl">1L</span><span class="op">)</span>, <span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">a1b</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>,<span class="fl">0L</span>,<span class="fl">1L</span>,<span class="fl">0L</span><span class="op">)</span>, <span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">m2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype_multi.html">split_haplotype_multi</a></span><span class="op">(</span><span class="va">gt0b</span>, <span class="va">gt1b</span>, <span class="va">a0b</span>, <span class="va">a1b</span>, <span class="va">pop2</span><span class="op">)</span></span>
-<span><span class="va">p2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype.html">split_haplotype</a></span><span class="op">(</span><span class="va">gt0b</span>, <span class="va">gt1b</span>, <span class="va">a0b</span>, <span class="va">a1b</span>, <span class="va">pop2</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"AFR identical:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">m2</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, <span class="va">p2</span><span class="op">$</span><span class="va">african</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; AFR identical: TRUE</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"EUR identical:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">m2</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span>, <span class="va">p2</span><span class="op">$</span><span class="va">european</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; EUR identical: TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt; [4,]    0    1    0    0    0    0</span></span></code></pre></div>
+<p>Each allele goes to exactly one population, so the three dosages add
+up to the genotype:</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="va">phased3</span><span class="op">$</span><span class="va">AFR</span> <span class="op">+</span> <span class="va">phased3</span><span class="op">$</span><span class="va">EUR</span> <span class="op">+</span> <span class="va">phased3</span><span class="op">$</span><span class="va">NAT</span>, <span class="va">hap0</span> <span class="op">+</span> <span class="va">hap1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>With two populations, <code><a href="../reference/split_haplotype_multi.html">split_haplotype_multi()</a></code> gives the
+same result as <code><a href="../reference/split_haplotype.html">split_haplotype()</a></code>:</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">m2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_haplotype_multi.html">split_haplotype_multi</a></span><span class="op">(</span><span class="va">gt0</span>, <span class="va">gt1</span>, <span class="va">a0</span>, <span class="va">a1</span>, pop_codes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">0L</span>, EUR <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">m2</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, <span class="va">phased</span><span class="op">$</span><span class="va">african</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="b-3-four--and-five-population-extension">B.3 Four- and five-population extension<a class="anchor" aria-label="anchor" href="#b-3-four--and-five-population-extension"></a>
+<h3 id="b-3-four-or-more-populations">B.3 Four or more populations<a class="anchor" aria-label="anchor" href="#b-3-four-or-more-populations"></a>
 </h3>
-<p>The same interface extends directly to four or five populations by
-adding entries to <code>pure_codes</code> and rows to
-<code>mixed_codes</code>. There are K(K−1)/2 mixed-pair codes for K
-populations — 6 for K = 4, 10 for K = 5 — and <code>mixed_codes</code>
-must list all of them.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Four populations: AFR, EUR, NAT, EAS</span></span>
-<span><span class="va">pure_4</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">4L</span>, EAS <span class="op">=</span> <span class="fl">5L</span><span class="op">)</span></span>
-<span><span class="va">mixed_4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  code <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">6L</span>, <span class="fl">7L</span>, <span class="fl">8L</span>, <span class="fl">9L</span>, <span class="fl">10L</span><span class="op">)</span>,</span>
-<span>  pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>,<span class="st">"AFR"</span>,<span class="st">"AFR"</span>,<span class="st">"EUR"</span>,<span class="st">"EUR"</span>,<span class="st">"NAT"</span><span class="op">)</span>,</span>
-<span>  pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>,<span class="st">"NAT"</span>,<span class="st">"EAS"</span>,<span class="st">"NAT"</span>,<span class="st">"EAS"</span>,<span class="st">"EAS"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
+<p>More populations only means more entries in <code>pure_codes</code>
+and more rows in <code>mixed_codes</code>, one for every pair of
+populations. For four populations:</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">pure_4</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fl">3L</span>, EUR <span class="op">=</span> <span class="fl">1L</span>, NAT <span class="op">=</span> <span class="fl">4L</span>, EAS <span class="op">=</span> <span class="fl">5L</span><span class="op">)</span></span>
+<span><span class="va">mixed_4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>code <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">6L</span>, <span class="fl">7L</span>, <span class="fl">8L</span>, <span class="fl">9L</span>, <span class="fl">10L</span><span class="op">)</span>,</span>
+<span>                      pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"AFR"</span>, <span class="st">"AFR"</span>, <span class="st">"EUR"</span>, <span class="st">"EUR"</span>, <span class="st">"NAT"</span><span class="op">)</span>,</span>
+<span>                      pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>, <span class="st">"NAT"</span>, <span class="st">"EAS"</span>, <span class="st">"NAT"</span>, <span class="st">"EAS"</span>, <span class="st">"EAS"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">11</span><span class="op">)</span></span>
-<span><span class="va">n_var4</span> <span class="op">&lt;-</span> <span class="fl">6</span>; <span class="va">n_samp4</span> <span class="op">&lt;-</span> <span class="fl">16</span></span>
-<span><span class="va">gt4</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="va">n_var4</span> <span class="op">*</span> <span class="va">n_samp4</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>                       prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.85</span>, <span class="fl">0.12</span>, <span class="fl">0.03</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>                nrow <span class="op">=</span> <span class="va">n_var4</span>, ncol <span class="op">=</span> <span class="va">n_samp4</span><span class="op">)</span></span>
-<span><span class="va">anc4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">pure_4</span>, <span class="va">mixed_4</span><span class="op">$</span><span class="va">code</span><span class="op">)</span>, <span class="va">n_var4</span> <span class="op">*</span> <span class="va">n_samp4</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,</span>
-<span>                nrow <span class="op">=</span> <span class="va">n_var4</span>, ncol <span class="op">=</span> <span class="va">n_samp4</span><span class="op">)</span></span>
-<span></span>
+<span><span class="va">gt4</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">6</span> <span class="op">*</span> <span class="fl">16</span>, replace <span class="op">=</span> <span class="cn">TRUE</span>, prob <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.85</span>, <span class="fl">0.12</span>, <span class="fl">0.03</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>               nrow <span class="op">=</span> <span class="fl">6</span><span class="op">)</span></span>
+<span><span class="va">anc4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">pure_4</span>, <span class="va">mixed_4</span><span class="op">$</span><span class="va">code</span><span class="op">)</span>, <span class="fl">6</span> <span class="op">*</span> <span class="fl">16</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">6</span><span class="op">)</span></span>
 <span><span class="va">out4</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt4</span>, <span class="va">anc4</span>, <span class="va">pure_4</span>, <span class="va">mixed_4</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Populations:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">out4</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">", "</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Populations: AFR, EUR, NAT, EAS</span></span>
-<span></span>
-<span><span class="co"># Conservation check: pooled dosage never exceeds the raw genotype</span></span>
-<span><span class="va">total4</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/funprog.html" class="external-link">Reduce</a></span><span class="op">(</span><span class="st">"+"</span>, <span class="va">out4</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Max excess of pooled dosage over raw gt:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">total4</span> <span class="op">-</span> <span class="va">gt4</span><span class="op">)</span>, <span class="st">"(must be &lt;= 0)\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Max excess of pooled dosage over raw gt: 0 (must be &lt;= 0)</span></span>
-<span></span>
-<span><span class="co"># Five populations: AFR, EUR, NAT, EAS, SAS — 10 mixed-pair codes</span></span>
-<span><span class="va">mixed_5</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  code <span class="op">=</span> <span class="fl">7</span><span class="op">:</span><span class="fl">16</span>,</span>
-<span>  pop1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>,<span class="st">"AFR"</span>,<span class="st">"AFR"</span>,<span class="st">"AFR"</span>,<span class="st">"EUR"</span>,<span class="st">"EUR"</span>,<span class="st">"EUR"</span>,<span class="st">"NAT"</span>,<span class="st">"NAT"</span>,<span class="st">"EAS"</span><span class="op">)</span>,</span>
-<span>  pop2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EUR"</span>,<span class="st">"NAT"</span>,<span class="st">"EAS"</span>,<span class="st">"SAS"</span>,<span class="st">"NAT"</span>,<span class="st">"EAS"</span>,<span class="st">"SAS"</span>,<span class="st">"EAS"</span>,<span class="st">"SAS"</span>,<span class="st">"SAS"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"K=5 mixed_codes has"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">mixed_5</span><span class="op">)</span>, <span class="st">"rows (expected 5*4/2 ="</span>, <span class="fl">5</span> <span class="op">*</span> <span class="fl">4</span> <span class="op">/</span> <span class="fl">2</span>, <span class="st">")\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; K=5 mixed_codes has 10 rows (expected 5*4/2 = 10 )</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">out4</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "AFR" "EUR" "NAT" "EAS"</span></span></code></pre></div>
 <hr>
 </div>
 </div>
 <div class="section level2">
-<h2 id="part-c-gla-shrinkage-when-ambiguous-carriers-dominate">Part C: GLA shrinkage — when ambiguous carriers dominate<a class="anchor" aria-label="anchor" href="#part-c-gla-shrinkage-when-ambiguous-carriers-dominate"></a>
+<h2 id="part-c-shrinkage-toward-12">Part C: Shrinkage toward 1/2<a class="anchor" aria-label="anchor" href="#part-c-shrinkage-toward-12"></a>
 </h2>
-<p>Parts A and B each flagged an edge case and deferred it here: the
-pure singleton (D = 0, every alt allele carried by mixed-ancestry
-heterozygotes) is only the extreme end of a broader problem — the raw
-formula gets unreliable well before D actually hits zero, any time
-ambiguous mixed-het carriers <em>dominate</em> the count. Take 10
-AFR/EUR mixed-het carriers (code 2) and just <strong>one</strong>
-pure-EUR hom-alt carrier (code 1) at the same variant — nothing
-else:</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">gt_dom</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">10</span><span class="op">)</span>, <span class="fl">2L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># 10 mixed hets + 1 pure EUR hom-alt</span></span>
-<span><span class="va">anc_dom</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">10</span><span class="op">)</span>, <span class="fl">1L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># code 2 = AFR/EUR, code 1 = EUR</span></span>
-<span></span>
-<span><span class="va">r_raw</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_dom</span>, <span class="va">anc_dom</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span>  <span class="co"># gla=NULL (default)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Raw split -&gt; AFR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>,</span>
-<span>    <span class="st">" EUR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span>, <span class="st">" NAT total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">NAT</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Raw split -&gt; AFR total: 0  EUR total: 12  NAT total: 0</span></span></code></pre></div>
-<p>D &gt; 0 here, so this isn’t the singleton branch — the raw formula
-happily computes p_AFR = 0, p_EUR = 1 from that one unambiguous carrier,
-and confidently assigns <strong>all ten</strong> ambiguous carriers’ alt
-alleles to EUR. That’s not a “no answer, guess 50/50” problem; it’s a
-<em>confidently wrong-looking</em> answer extrapolated from a single
-data point. Nothing in the raw formula distinguishes “1 unambiguous
-carrier informing 2 total alt alleles” from “1 unambiguous carrier
-informing 100” — it takes whatever ratio it computes at face value,
-regardless of how little evidence backs it.</p>
-<p><strong>GLA (global local ancestry) shrinkage</strong> fixes both
-this case and the pure singleton with one mechanism: discount the raw
-<em>pairwise</em> ratio in proportion to how much of a variant’s
-evidence is actually ambiguous <strong>for that specific pair</strong>,
-and fill in the rest from the chromosome arm’s independently-estimated
-ancestry mixture, renormalised to just the two populations in the pair.
-For the mixed pair <code>(i,j)</code> behind a given ambiguous het
-(here, AFR/EUR):</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo><mfrac><mrow><mrow><mtext mathvariant="normal">pair </mtext><mspace width="0.333em"></mspace></mrow><mo stretchy="false" form="prefix">(</mo><mi>i</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">)</mo><mtext mathvariant="normal">’s ambiguous-het count</mtext></mrow><mtext mathvariant="normal">all alt-carriers at this variant, any category</mtext></mfrac><mo>,</mo><mspace width="2.0em"></mspace><mfrac><msub><mi>p</mi><mi>i</mi></msub><mrow><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub></mrow></mfrac><mo>←</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>−</mo><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo><mfrac><msubsup><mi>p</mi><mi>i</mi><mtext mathvariant="normal">raw</mtext></msubsup><mrow><msubsup><mi>p</mi><mi>i</mi><mtext mathvariant="normal">raw</mtext></msubsup><mo>+</mo><msubsup><mi>p</mi><mi>j</mi><mtext mathvariant="normal">raw</mtext></msubsup></mrow></mfrac><mo>+</mo><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>⋅</mo><mfrac><mrow><msub><mtext mathvariant="normal">GLA</mtext><mi>i</mi></msub><mo stretchy="false" form="prefix">[</mo><mtext mathvariant="normal">arm</mtext><mo stretchy="false" form="postfix">]</mo></mrow><mrow><msub><mtext mathvariant="normal">GLA</mtext><mi>i</mi></msub><mo stretchy="false" form="prefix">[</mo><mtext mathvariant="normal">arm</mtext><mo stretchy="false" form="postfix">]</mo><mo>+</mo><msub><mtext mathvariant="normal">GLA</mtext><mi>j</mi></msub><mo stretchy="false" form="prefix">[</mo><mtext mathvariant="normal">arm</mtext><mo stretchy="false" form="postfix">]</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">w_{ij} = \frac{\text{pair } (i,j)\text{'s ambiguous-het count}}{\text{all alt-carriers at this variant, any category}}, \qquad
-\frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij}) \frac{p_i^{\text{raw}}}{p_i^{\text{raw}}+p_j^{\text{raw}}} + w_{ij} \cdot \frac{\text{GLA}_i[\text{arm}]}{\text{GLA}_i[\text{arm}]+\text{GLA}_j[\text{arm}]}</annotation></semantics></math></p>
-<p>Blending against the pair-renormalised GLA ratio — rather than each
-population’s raw <code>GLA_k[arm]</code> directly — matters once K &gt;
-2: it guarantees an ambiguous AFR/EUR het never receives any dosage
-toward a third population like NAT, however strongly shrinkage applies.
-The example below confirms this: <code>NAT total</code> stays exactly 0
-even though <code>GLA_NAT[arm] = 0.05 &gt; 0</code> — a formula that
-blended each <code>p_k</code> toward its raw <code>GLA_k[arm]</code>
-directly (instead of the pair-renormalised ratio above) would
-incorrectly leak some dosage to NAT here. For K = 2, where
-<code>GLA_AFR[arm] + GLA_EUR[arm] = 1</code> by construction, the
-pair-renormalised target collapses to plain <code>GLA_AFR[arm]</code>
-and this formula reduces to the simpler two-population case from Part
-A.</p>
-<p><code>w_ij = 0</code> (pair <code>(i,j)</code>’s own unambiguous
-carriers dominate) reduces to exactly the raw pairwise ratio from Parts
-A/B. <code>w_ij = 1</code> (the pure singleton for that pair) falls back
-entirely to the pair’s GLA-conditioned ratio — not a coin flip; that’s
-just one end of this continuum, not a separate mechanism.
-<code>GLA_k[arm]</code> itself is computed once per chromosome arm
-(split at the centromere) directly from the MSP ancestry
-<strong>tracts</strong>, not from genotypes or phase, so it stays
-well-estimated regardless of how rare any individual variant is.</p>
-<p><code><a href="../reference/split_diploid.html">split_diploid()</a></code>/<code><a href="../reference/split_diploid_multi.html">split_diploid_multi()</a></code>
-accept this as an optional <code>gla</code> (proportions) +
-<code>arm_id</code> (which row of <code>gla</code> each variant uses)
-argument pair; leaving them at their default <code>NULL</code>
-reproduces Parts A/B exactly, as seen above. Revisiting the example
-above with a <code>gla</code> argument supplied — say, this arm’s cohort
-is mostly AFR/EUR admixed with little NAT ancestry:</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># This arm's actual ancestry mixture (from MSP tracts, not this variant)</span></span>
-<span><span class="va">gla_arm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.70</span>, <span class="fl">0.25</span>, <span class="fl">0.05</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>                   dimnames <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"p"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"EUR"</span>, <span class="st">"NAT"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">r_gla</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_dom</span>, <span class="va">anc_dom</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span>,</span>
-<span>                              gla <span class="op">=</span> <span class="va">gla_arm</span>, arm_id <span class="op">=</span> <span class="fl">0L</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Without GLA -&gt; AFR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>,</span>
-<span>    <span class="st">" EUR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span>, <span class="st">" NAT total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_raw</span><span class="op">$</span><span class="va">NAT</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Without GLA -&gt; AFR total: 0  EUR total: 12  NAT total: 0</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"With GLA    -&gt; AFR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_gla</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>,</span>
-<span>    <span class="st">" EUR total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_gla</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>,</span>
-<span>    <span class="st">" NAT total:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">r_gla</span><span class="op">$</span><span class="va">NAT</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; With GLA    -&gt; AFR total: 6.14  EUR total: 5.86  NAT total: 0</span></span></code></pre></div>
-<p>Here <code>w = 10/11 ≈ 0.91</code> — the near-total ambiguity is
-almost fully discounted, and the ten mixed-het carriers now split
-roughly 2:1 toward AFR (matching the arm’s 0.70/0.25 mixture) instead of
-being handed to EUR outright. Same ten carriers, same one pure-EUR data
-point — but the GLA-informed split reflects what’s actually known about
-<em>this arm, this cohort</em>, instead of extrapolating from one
-sample. The pure singleton from B.1 is the same mechanism at its extreme
-(<code>w = 1</code>, no unambiguous carriers at all):</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">gt_s</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1L</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">anc_s</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">2L</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>   <span class="co"># code 2 = AFR/EUR</span></span>
-<span></span>
-<span><span class="va">r_flat</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_s</span>, <span class="va">anc_s</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span>                      <span class="co"># gla=NULL (default)</span></span>
-<span><span class="va">r_gla_s</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_s</span>, <span class="va">anc_s</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span>,</span>
-<span>                                gla <span class="op">=</span> <span class="va">gla_arm</span>, arm_id <span class="op">=</span> <span class="fl">0L</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Without GLA (flat fallback) -&gt; AFR:"</span>, <span class="va">r_flat</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>,</span>
-<span>    <span class="st">" EUR:"</span>, <span class="va">r_flat</span><span class="op">$</span><span class="va">EUR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="st">" NAT:"</span>, <span class="va">r_flat</span><span class="op">$</span><span class="va">NAT</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Without GLA (flat fallback) -&gt; AFR: 0.5  EUR: 0.5  NAT: 0</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"With GLA (this arm's ancestry) -&gt; AFR:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">r_gla_s</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>,</span>
-<span>    <span class="st">" EUR:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">r_gla_s</span><span class="op">$</span><span class="va">EUR</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">" NAT:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">r_gla_s</span><span class="op">$</span><span class="va">NAT</span><span class="op">[</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; With GLA (this arm's ancestry) -&gt; AFR: 0.737  EUR: 0.263  NAT: 0</span></span></code></pre></div>
-<p>In practice you won’t build <code>gla</code>/<code>arm_id</code> by
-hand — <code>ancestry_split(mode = "dosage")</code> computes both
-automatically from the MSP file’s tracts and applies them for you. Pass
-<code>use_gla = FALSE</code> to turn shrinkage off and get the flat
-Parts A/B behavior instead, e.g. for comparing against the original
-estimator:</p>
+<p>The proportions in A.1 and B.1 are estimated from the unambiguous
+carriers of each variant. Rare variants have few carriers, and an
+estimate from one or two of them can be far from the truth. Consider a
+variant carried by ten ambiguous AFR/EUR heterozygotes and a single
+EUR/EUR homozygote:</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">split_gla</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"dosage"</span><span class="op">)</span>                    <span class="co"># use_gla=TRUE (default)</span></span>
-<span><span class="va">split_flat</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="va">vcf_path</span>, <span class="va">msp_path</span>, mode <span class="op">=</span> <span class="st">"dosage"</span>, use_gla <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
-<p>See <code><a href="../reference/split_diploid_multi.html">?split_diploid_multi</a></code> and
-<code><a href="../reference/split_haplotype_multi.html">?split_haplotype_multi</a></code> for full argument documentation.
-Next: <code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code> builds these same
-inputs from real VCF + MSP file formats.</p>
+<code class="sourceCode R"><span><span class="va">gt_dom</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">10</span><span class="op">)</span>, <span class="fl">2L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">anc_dom</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fl">10</span><span class="op">)</span>, <span class="fl">1L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">raw</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_dom</span>, <span class="va">anc_dom</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">raw</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, EUR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">raw</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span>, NAT <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">raw</span><span class="op">$</span><span class="va">NAT</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; AFR EUR NAT </span></span>
+<span><span class="co">#&gt;   0  12   0</span></span></code></pre></div>
+<p>The only unambiguous carrier is European, so the estimate is
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mtext mathvariant="normal">EUR</mtext></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">p_\text{EUR} = 1</annotation></semantics></math>,
+and all ten ambiguous alleles are assigned to European haplotypes on the
+strength of one sample.</p>
+<p><code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> therefore pulls the estimated share
+toward 1/2. How far depends on
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>,
+the fraction of the variant’s alternate alleles that are ambiguous
+(homozygotes count twice, as they carry two alleles). For an ambiguous
+heterozygote with ancestries
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mtext mathvariant="normal">share</mtext><mi>i</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>w</mi><mo stretchy="false" form="postfix">)</mo><mspace width="0.167em"></mspace><mfrac><msub><mi>p</mi><mi>i</mi></msub><mrow><msub><mi>p</mi><mi>i</mi></msub><mo>+</mo><msub><mi>p</mi><mi>j</mi></msub></mrow></mfrac><mo>+</mo><mi>w</mi><mo>⋅</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\text{share}_i = (1 - w)\,\frac{p_i}{p_i + p_j} + w \cdot \frac{1}{2}.
+</annotation></semantics></math></p>
+<p>When most of the evidence is unambiguous,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>w</mi><annotation encoding="application/x-tex">w</annotation></semantics></math>
+is close to 0 and the estimate from A.1 or B.1 is used almost unchanged.
+When there is no unambiguous evidence,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">w = 1</annotation></semantics></math>
+and the allele is split exactly 1/2 and 1/2, the same as the fallback in
+A.1. The shares stay within the pair, so an AFR/EUR heterozygote never
+gets Native American dosage.</p>
+<p>The target is 1/2 because an AFR/EUR heterozygote has exactly one
+African and one European haplotype at the site. Which of the two carries
+the allele depends on how common the allele is on African versus
+European haplotypes, not on how much African ancestry the cohort has
+overall. An earlier version of lantern shrank toward the cohort’s
+average ancestry (about 0.82 African on chromosome 19 in our data). In
+simulations based on that data, ambiguous alleles were in fact on the
+African haplotype half of the time, and shrinking toward 1/2 assigned
+them more accurately.</p>
+<p>The low-level functions take the target through their
+<code>gla</code> argument (one row of target proportions) and
+<code>arm_id</code> (which row each variant uses). A target of 1/K for
+each of K populations gives 1/2 for every pair, which is what
+<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> uses:</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">half</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1</span><span class="op">/</span><span class="fl">3</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>               dimnames <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"all"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"AFR"</span>, <span class="st">"EUR"</span>, <span class="st">"NAT"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">shrunk</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/split_diploid_multi.html">split_diploid_multi</a></span><span class="op">(</span><span class="va">gt_dom</span>, <span class="va">anc_dom</span>, <span class="va">pure_codes</span>, <span class="va">mixed_codes</span>,</span>
+<span>                              gla <span class="op">=</span> <span class="va">half</span>, arm_id <span class="op">=</span> <span class="fl">0L</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>raw    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">raw</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, EUR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">raw</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      shrunk <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>AFR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">shrunk</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>, EUR <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">shrunk</span><span class="op">$</span><span class="va">EUR</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;             AFR       EUR</span></span>
+<span><span class="co">#&gt; raw    0.000000 12.000000</span></span>
+<span><span class="co">#&gt; shrunk 4.166667  7.833333</span></span></code></pre></div>
+<p>Here 10 of the variant’s 12 alternate alleles are ambiguous, so
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>10</mn><mi>/</mi><mn>12</mn></mrow><annotation encoding="application/x-tex">w = 10/12</annotation></semantics></math>.
+Each heterozygote’s African share becomes
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mi>/</mi><mn>12</mn><mo stretchy="false" form="postfix">)</mo><mo>⋅</mo><mn>0</mn><mo>+</mo><mo stretchy="false" form="prefix">(</mo><mn>10</mn><mi>/</mi><mn>12</mn><mo stretchy="false" form="postfix">)</mo><mo>⋅</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mi>/</mi><mn>2</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>5</mn><mi>/</mi><mn>12</mn><mo>≈</mo><mn>0.42</mn></mrow><annotation encoding="application/x-tex">(2/12) \cdot 0 + (10/12) \cdot (1/2) = 5/12 \approx 0.42</annotation></semantics></math>
+instead of 0:</p>
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">shrunk</span><span class="op">$</span><span class="va">AFR</span><span class="op">[</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">]</span></span>
+<span><span class="co">#&gt; [1] 0.4166667</span></span></code></pre></div>
+<p>The variant from A.1 has much more unambiguous evidence: one
+ambiguous allele out of seven, so
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1</mn><mi>/</mi><mn>7</mn></mrow><annotation encoding="application/x-tex">w = 1/7</annotation></semantics></math>,
+and S4’s African share moves only slightly, from 2/3 to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mn>6</mn><mi>/</mi><mn>7</mn><mo stretchy="false" form="postfix">)</mo><mo stretchy="false" form="prefix">(</mo><mn>2</mn><mi>/</mi><mn>3</mn><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mi>/</mi><mn>7</mn><mo stretchy="false" form="postfix">)</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mi>/</mi><mn>2</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>9</mn><mi>/</mi><mn>14</mn><mo>≈</mo><mn>0.64</mn></mrow><annotation encoding="application/x-tex">(6/7)(2/3) + (1/7)(1/2) = 9/14 \approx 0.64</annotation></semantics></math>:</p>
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># S4 is the 4th sample</span></span>
+<span><span class="fu"><a href="../reference/split_diploid.html">split_diploid</a></span><span class="op">(</span><span class="va">gt</span>, <span class="va">anc</span>, gla <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0.5</span>, nrow <span class="op">=</span> <span class="fl">1</span>, ncol <span class="op">=</span> <span class="fl">2</span><span class="op">)</span>, arm_id <span class="op">=</span> <span class="fl">0L</span><span class="op">)</span><span class="op">$</span><span class="va">african</span><span class="op">[</span><span class="fl">1</span>, <span class="fl">4</span><span class="op">]</span></span>
+<span><span class="co">#&gt; [1] 0.6428571</span></span></code></pre></div>
+<p>You do not need to set the target yourself:
+<code>ancestry_split(mode = "dosage")</code> always applies it.</p>
 <div class="section level3">
 <h3 id="session-information">Session information<a class="anchor" aria-label="anchor" href="#session-information"></a>
 </h3>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
 <span><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
@@ -783,11 +611,11 @@ inputs from real VCF + MSP file formats.</p>
 <span><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; other attached packages:</span></span>
-<span><span class="co">#&gt; [1] lantern_0.99.0</span></span>
+<span><span class="co">#&gt; [1] lantern_0.99.1</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span><span class="co">#&gt;  [1] digest_0.6.39     desc_1.4.3        R6_2.6.1          fastmap_1.2.0    </span></span>
-<span><span class="co">#&gt;  [5] xfun_0.61         cachem_1.1.0      knitr_1.52        htmltools_0.5.9  </span></span>
+<span><span class="co">#&gt;  [5] xfun_0.62         cachem_1.1.0      knitr_1.52        htmltools_0.5.9  </span></span>
 <span><span class="co">#&gt;  [9] rmarkdown_2.32    lifecycle_1.0.5   cli_3.6.6         sass_0.4.10      </span></span>
 <span><span class="co">#&gt; [13] pkgdown_2.2.1     textshaping_1.0.5 jquerylib_0.1.4   systemfonts_1.3.2</span></span>
 <span><span class="co">#&gt; [17] compiler_4.6.1    tools_4.6.1       ragg_1.5.2        bslib_0.12.0     </span></span>

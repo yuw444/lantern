@@ -40,7 +40,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -98,7 +98,7 @@
 </h1></div>
 <p><strong>L</strong>everaging Local <strong>AN</strong>cestry <strong>T</strong>racts to <strong>E</strong>nhance <strong>R</strong>are-Varia<strong>N</strong>t Aggregate Association Testing</p>
 <p><a href="https://yuw444.github.io/lantern/"><img src="https://img.shields.io/badge/docs-pkgdown-blue" alt="pkgdown site"></a> <a href="https://github.com/yuw444/lantern" class="external-link"><img src="https://img.shields.io/badge/source-GitHub-lightgrey" alt="GitHub"></a></p>
-<p>Full documentation, vignettes, and function reference: <strong><a href="https://yuw444.github.io/lantern/">https://yuw444.github.io/lantern/</a></strong>. MedRxiv: <a href="https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf" class="external-link">2026.04. 24.26351693</a></p>
+<p>Full documentation, vignettes, and function reference: <strong><a href="https://yuw444.github.io/lantern/">https://yuw444.github.io/lantern/</a></strong>. Preprint: <a href="https://doi.org/10.64898/2026.04.24.26351693" class="external-link">doi:10.64898/2026.04.24.26351693</a> (medRxiv).</p>
 <div class="section level2">
 <h2 id="features">Features<a class="anchor" aria-label="anchor" href="#features"></a>
 </h2>
@@ -118,12 +118,25 @@
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>SeqArray is a Bioconductor package and is not found by <code>devtools::install_github()</code> automatically. Use BiocManager to handle dependencies in one step:</p>
+<p>lantern has been submitted to Bioconductor and is under review (<a href="https://github.com/Bioconductor/BiocContributions/issues/229" class="external-link">Bioconductor/BiocContributions#229</a>). Until it is accepted, install the development version from GitHub with BiocManager, which also installs the Bioconductor dependencies (SeqArray):</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"BiocManager"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"BiocManager"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"yuw444/lantern"</span><span class="op">)</span></span></code></pre></div>
+<p>Once lantern is available from Bioconductor, this becomes <code>BiocManager::install("lantern")</code>.</p>
+<p><code><a href="reference/ancestry_smmat.html">ancestry_smmat()</a></code> (the association tests) also needs GMMAT from CRAN and SeqVarTools from Bioconductor:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"GMMAT"</span><span class="op">)</span></span>
+<span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"SeqVarTools"</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
+</h2>
+<p>If you use lantern, please cite the preprint (<code>citation("lantern")</code>):</p>
+<blockquote>
+<p>Wang Y, Tuftin B, Raffield LM, Hidalgo B, Kerns SL, DeWan AT, Leal SM, Auer PL (2026). LANTERN: Leveraging local ancestry tracts to enhance rare-variant aggregate association testing. <em>medRxiv</em>. <a href="doi:%5B10.64898/2026.04.24.26351693" class="uri">doi:[10.64898/2026.04.24.26351693</a>](<a href="https://doi.org/10.64898/2026.04.24.26351693" class="external-link uri">https://doi.org/10.64898/2026.04.24.26351693</a>)</p>
+</blockquote>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick Start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
@@ -135,12 +148,12 @@
 <li>
 <strong>Phased split</strong> — phased haplotypes (<code>0|1</code>-style genotypes) + per-haplotype local ancestry tracts (e.g. from RFMix). Each haplotype’s allele is deterministically assigned to the ancestry pool it was inferred to originate from — no proportional estimation needed. Entry point: <code><a href="reference/ancestry_split_phased.html">ancestry_split_phased()</a></code> / <code><a href="reference/split_haplotype.html">split_haplotype()</a></code>.</li>
 </ul>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://yuw444.github.io/lantern/">lantern</a></span><span class="op">)</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="dosage-split">Dosage split<a class="anchor" aria-label="anchor" href="#dosage-split"></a>
 </h3>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># GT matrix: 5 variants x 4 samples</span></span>
 <span><span class="co"># 0 = homozygous ref, 1 = heterozygous, 2 = homozygous alt</span></span>
 <span><span class="va">gt</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">0</span>,</span>
@@ -157,12 +170,12 @@
 <span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ancestry_split_dosage.html">ancestry_split_dosage</a></span><span class="op">(</span><span class="va">gt</span>, <span class="va">pt</span><span class="op">)</span></span>
 <span><span class="va">result</span><span class="op">$</span><span class="va">african</span>    <span class="co"># African ancestry-specific dosages</span></span>
 <span><span class="va">result</span><span class="op">$</span><span class="va">european</span>   <span class="co"># European ancestry-specific dosages</span></span>
-<span><span class="va">result</span><span class="op">$</span><span class="va">counts</span>     <span class="co"># Ancestry counts per region</span></span></code></pre></div>
+<span><span class="va">result</span><span class="op">$</span><span class="va">counts</span>     <span class="co"># Per-variant counts of AFR/AFR, EUR/EUR and AFR/EUR samples</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="phased-split">Phased split<a class="anchor" aria-label="anchor" href="#phased-split"></a>
 </h3>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Haplotype allele matrices: 2 variants x 2 samples, alleles (0/1)</span></span>
 <span><span class="va">gt_hap0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">0L</span>, <span class="fl">0L</span>, <span class="fl">1L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">2</span>, ncol <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="va">gt_hap1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="fl">1L</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span>, nrow <span class="op">=</span> <span class="fl">2</span>, ncol <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
@@ -175,7 +188,7 @@
 <span><span class="va">result</span><span class="op">$</span><span class="va">african</span>    <span class="co"># African ancestry-specific dosages</span></span>
 <span><span class="va">result</span><span class="op">$</span><span class="va">european</span>   <span class="co"># European ancestry-specific dosages</span></span></code></pre></div>
 <p>Or run the full pipeline directly from a phased VCF/BCF + RFMix MSP file:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ancestry_split_phased.html">ancestry_split_phased</a></span><span class="op">(</span></span>
 <span>  vcf_path <span class="op">=</span> <span class="st">"data/chr19.phased.bcf"</span>,</span>
 <span>  msp_path <span class="op">=</span> <span class="st">"data/chr19.msp.tsv.gz"</span>,</span>
@@ -292,12 +305,12 @@
 <h5 id="where-the-msp-file-comes-from">Where the MSP file comes from<a class="anchor" aria-label="anchor" href="#where-the-msp-file-comes-from"></a>
 </h5>
 <p>The <code>.msp.tsv[.gz]</code> file is one of several outputs written by <a href="https://github.com/slowkoni/rfmix" class="external-link">RFMix2</a>, a local-ancestry inference tool. A typical run that produces it looks like:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="ex">rfmix</span> <span class="at">-f</span> query.phased.vcf.gz <span class="dt">\</span></span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>      <span class="at">-r</span> reference_panel.phased.vcf.gz <span class="dt">\</span></span>
-<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>      <span class="at">-m</span> sample_map.tsv <span class="dt">\</span></span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>      <span class="at">-g</span> genetic_map.txt <span class="dt">\</span></span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>      <span class="at">-o</span> LANTERN_chr19 <span class="dt">\</span></span>
-<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>      <span class="at">--chromosome</span><span class="op">=</span>chr19</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="ex">rfmix</span> <span class="at">-f</span> query.phased.vcf.gz <span class="dt">\</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>      <span class="at">-r</span> reference_panel.phased.vcf.gz <span class="dt">\</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>      <span class="at">-m</span> sample_map.tsv <span class="dt">\</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>      <span class="at">-g</span> genetic_map.txt <span class="dt">\</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>      <span class="at">-o</span> LANTERN_chr19 <span class="dt">\</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>      <span class="at">--chromosome</span><span class="op">=</span>chr19</span></code></pre></div>
 <p>This writes several sibling files sharing the <code>LANTERN_chr19</code> prefix; LANTERN only reads the <code>.msp.tsv.gz</code>:</p>
 <table class="table">
 <colgroup>
@@ -388,7 +401,7 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 <div class="section level3">
 <h3 id="sample-mismatches">Sample Mismatches<a class="anchor" aria-label="anchor" href="#sample-mismatches"></a>
 </h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># GT has samples A, B, C</span></span>
 <span><span class="co"># PT has samples A, B, D</span></span>
 <span><span class="co"># -&gt; Only A and B are used</span></span>
@@ -405,7 +418,7 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 <div class="section level3">
 <h3 id="variantregion-mismatches">Variant/Region Mismatches<a class="anchor" aria-label="anchor" href="#variantregion-mismatches"></a>
 </h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># GT variants: chr22:100, chr22:200, chr22:300</span></span>
 <span><span class="co"># PT regions: chr22:50-150, chr22:150-250</span></span>
 <span><span class="co"># -&gt; Only chr22:100 and chr22:200 are used (matched by coordinate)</span></span>
@@ -592,11 +605,11 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 <li>
 <strong>Pure ancestry (pt=1 or pt=3)</strong>: All alt alleles to that ancestry</li>
 <li>
-<strong>N5 dominates</strong>: When ambiguous mixed-ancestry heterozygotes (N5) make up most or all of a variant’s carriers — up to and including the singleton case, N5 = every carrier, where the formula is literally undefined (denominator = 0) — the raw p1/p2 ratio becomes unreliable. <code><a href="reference/ancestry_split.html">ancestry_split()</a></code> applies <strong>GLA shrinkage</strong> by default to fix this; see below.</li>
+<strong>N5 dominates</strong>: When ambiguous mixed-ancestry heterozygotes (N5) make up most or all of a variant’s carriers — up to and including the singleton case, N5 = every carrier, where the formula is literally undefined (denominator = 0) — the raw p1/p2 ratio becomes unreliable. <code><a href="reference/ancestry_split.html">ancestry_split()</a></code> applies <strong>shrinkage toward 1/2</strong> to fix this; see below.</li>
 </ul>
 </div>
 <div class="section level4">
-<h4 id="gla-shrinkage-why-an-ambiguous-dominated-variant-needs-outside-evidence">GLA shrinkage: why an ambiguous-dominated variant needs outside evidence<a class="anchor" aria-label="anchor" href="#gla-shrinkage-why-an-ambiguous-dominated-variant-needs-outside-evidence"></a>
+<h4 id="shrinkage-toward-12-why-an-ambiguous-dominated-variant-needs-it">Shrinkage toward 1/2: why an ambiguous-dominated variant needs it<a class="anchor" aria-label="anchor" href="#shrinkage-toward-12-why-an-ambiguous-dominated-variant-needs-it"></a>
 </h4>
 <p>The raw formula estimates a variant’s ancestry split from its own unambiguous carriers, then applies that ratio to the ambiguous ones. That works fine when unambiguous carriers are plentiful — but consider N5 = 10 (ten ambiguous mixed-ancestry heterozygotes) with everything else zero except N7 = 1 (one pure-European homozygous-alt carrier):</p>
 <pre><code><span><span class="va">total_alt</span>   <span class="op">=</span> <span class="fl">2</span><span class="op">*</span><span class="va">N1</span> <span class="op">+</span> <span class="va">N2</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N4</span> <span class="op">+</span> <span class="va">N5</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N7</span> <span class="op">+</span> <span class="va">N8</span> <span class="op">=</span> <span class="fl">2</span><span class="op">*</span><span class="fl">0</span><span class="op">+</span><span class="fl">0</span><span class="op">+</span><span class="fl">2</span><span class="op">*</span><span class="fl">0</span><span class="op">+</span><span class="fl">10</span><span class="op">+</span><span class="fl">2</span><span class="op">*</span><span class="fl">1</span><span class="op">+</span><span class="fl">0</span> <span class="op">=</span> <span class="fl">12</span></span>
@@ -604,12 +617,14 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 <span><span class="va">p1</span> <span class="op">=</span> <span class="op">(</span><span class="fl">2</span><span class="op">*</span><span class="va">N1</span> <span class="op">+</span> <span class="va">N2</span> <span class="op">+</span> <span class="va">N4</span><span class="op">)</span> <span class="op">/</span> <span class="va">denominator</span> <span class="op">=</span> <span class="op">(</span><span class="fl">0</span><span class="op">+</span><span class="fl">0</span><span class="op">+</span><span class="fl">0</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span> <span class="op">=</span> <span class="fl">0</span></span>
 <span><span class="va">p2</span> <span class="op">=</span> <span class="op">(</span><span class="va">N4</span> <span class="op">+</span> <span class="fl">2</span><span class="op">*</span><span class="va">N7</span> <span class="op">+</span> <span class="va">N8</span><span class="op">)</span> <span class="op">/</span> <span class="va">denominator</span> <span class="op">=</span> <span class="op">(</span><span class="fl">0</span><span class="op">+</span><span class="fl">2</span><span class="op">+</span><span class="fl">0</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span> <span class="op">=</span> <span class="fl">1</span></span></code></pre>
 <p>The formula confidently assigns <strong>all ten</strong> ambiguous carriers 100% European ancestry (p1=0, p2=1), extrapolated from a single unambiguous data point. Unlike the pure singleton, this isn’t a “no answer” case — the denominator is nonzero, so nothing flags it as unreliable. It’s a <em>confidently wrong-looking</em> answer: the raw formula can’t distinguish “1 unambiguous carrier informing 2 total alt alleles” from “1 unambiguous carrier informing 100 total” — it takes whatever ratio it computes at face value, regardless of how little evidence backs it.</p>
-<p><strong>GLA (global local ancestry) shrinkage</strong> fixes this — and the pure singleton — with one mechanism: discount the raw ratio in proportion to how much of a variant’s evidence is actually ambiguous, and fill in the rest from the chromosome arm’s independently-estimated ancestry mixture (from RFMix’s tracts, not this variant’s genotypes):</p>
+<p><strong>Shrinkage toward 1/2</strong> fixes this — and the pure singleton — with one mechanism: discount the raw ratio in proportion to how much of a variant’s evidence is actually ambiguous, and fill in the rest with an even split:</p>
 <pre><code><span><span class="va">w</span>  <span class="op">=</span> <span class="va">N5</span> <span class="op">/</span> <span class="va">total_alt</span>   <span class="co"># ambiguous share of this variant's alt-allele confidence</span></span>
-<span><span class="va">p1</span> <span class="op">=</span> <span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">w</span><span class="op">)</span> <span class="op">*</span> <span class="va">p1_raw</span> <span class="op">+</span> <span class="va">w</span> <span class="op">*</span> <span class="va">GLA_AFR</span><span class="op">[</span><span class="va">arm</span><span class="op">]</span></span></code></pre>
+<span><span class="va">p1</span> <span class="op">=</span> <span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">w</span><span class="op">)</span> <span class="op">*</span> <span class="va">p1_raw</span> <span class="op">+</span> <span class="va">w</span> <span class="op">*</span> <span class="fl">0.5</span></span>
+<span><span class="va">p2</span> <span class="op">=</span> <span class="fl">1</span> <span class="op">-</span> <span class="va">p1</span></span></code></pre>
 <p><code>total_alt</code> is the same allele-weighted quantity computed above (<code>2*N1 + N2 + 2*N4 + N5 + 2*N7 + N8</code>): hom-alt carriers count 2x, since each one carries two alt alleles’ worth of ancestry evidence, versus 1x for a het carrier or an ambiguous mixed het (<code>N5</code>, which always carries exactly one, unresolved, allele). An unweighted per-<em>individual</em> denominator would treat a hom-alt carrier the same as a het one and under-count its evidence.</p>
-<p>For the example above, <code>w = 10/12 ≈ 0.83</code> — the near-total ambiguity is mostly (not fully — the hom-alt carrier’s 2 alleles of evidence hold more weight than a het would) discounted. If this cohort’s arm-level ancestry runs 60% AFR / 40% EUR, GLA shrinkage gives <code>p1 = 0.50, p2 = 0.50</code> instead of the raw formula’s <code>p1=0, p2=1</code> — a moderate, defensible estimate instead of a hard call backed by one data point. <code>w = 0</code> (unambiguous carriers dominate) leaves the raw formula untouched; <code>w = 1</code> (the pure singleton) falls back entirely to the arm’s GLA proportion instead of a coin flip — the old special case is just one end of this same continuum, not a separate mechanism.</p>
-<p><code>ancestry_split(mode = "dosage")</code> computes and applies this automatically. Pass <code>use_gla = FALSE</code> to disable it and reproduce the original raw-ratio / flat-0.5-singleton estimator exactly (or call <code><a href="reference/split_diploid.html">split_diploid()</a></code>/<code><a href="reference/split_diploid_multi.html">split_diploid_multi()</a></code> directly with <code>gla = NULL</code>, the default, for the same effect at the matrix level). See <code><a href="articles/split-intuition.html">vignette("split-intuition")</a></code> for a worked example and the K &gt; 2 generalisation.</p>
+<p>For the example above, <code>w = 10/12 ≈ 0.83</code> — the near-total ambiguity is mostly (not fully — the hom-alt carrier’s 2 alleles of evidence hold more weight than a het would) discounted, giving <code>p1 = 5/12 ≈ 0.42, p2 ≈ 0.58</code> instead of the raw formula’s <code>p1=0, p2=1</code> — a moderate estimate instead of a hard call backed by one data point. <code>w = 0</code> (unambiguous carriers dominate) leaves the raw formula untouched; <code>w = 1</code> (the pure singleton) gives exactly 0.5/0.5 — the old special case is just one end of this same continuum, not a separate mechanism.</p>
+<p><strong>Why 1/2?</strong> A mixed-ancestry heterozygote carries exactly one African and one European haplotype at the site, so which one holds the allele depends on how common the allele is on African versus European haplotypes — not on how many African haplotypes the cohort has. An earlier version shrank toward the chromosome arm’s global local ancestry (GLA, ~0.82 AFR in the chr19 cohort), which pushed ambiguous alleles toward AFR. In chr19 simulations the true AFR share of mixed-het alleles was 0.50 at every allele count, and the 1/2 target both assigned alleles more accurately and gave more power when the causal effect was on European alleles.</p>
+<p><code>ancestry_split(mode = "dosage")</code> always applies this. At the matrix level, <code><a href="reference/split_diploid.html">split_diploid()</a></code>/<code><a href="reference/split_diploid_multi.html">split_diploid_multi()</a></code> take the target through their optional <code>gla</code> + <code>arm_id</code> arguments (a one-row matrix of 1/K with all-zero <code>arm_id</code> gives the same 1/2 shrinkage); leaving them <code>NULL</code> (the default) gives the raw ratio with only the flat 0.5 singleton fallback. See <code><a href="articles/split-intuition.html">vignette("split-intuition")</a></code> for a worked example and the K &gt; 2 generalisation.</p>
 </div>
 <div class="section level4">
 <h4 id="intuition-for-k--2-populations-split_diploid_multi">Intuition for K &gt; 2 populations (<code>split_diploid_multi</code>)<a class="anchor" aria-label="anchor" href="#intuition-for-k--2-populations-split_diploid_multi"></a>
@@ -618,12 +633,12 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 <ol style="list-style-type: decimal">
 <li><p><strong>Build a per-population proportion from unambiguous carriers.</strong> A pure homozygous-alt sample contributes 2 alleles to its own population’s count; a pure heterozygote contributes 1; and — the key unambiguous case — a <strong>mixed-pair homozygous-alt</strong> sample contributes exactly 1 allele to <em>each</em> of its two parent populations, because carrying two alt copies with ancestry split between two populations means one copy must have come from each side. Dividing by the variant’s total unambiguous alt-allele count gives <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mn>1</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>p</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">p_1, \ldots, p_K</annotation></semantics></math> (summing to 1).</p></li>
 <li>
-<p><strong>Distribute the ambiguous alleles proportionally, per pair.</strong> A mixed-pair heterozygote in pair <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mi>i</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(i,j)</annotation></semantics></math> carries exactly one alt allele but its parental origin is unknown, so it’s split using the conditional ratio <code>p_i / (p_i + p_j)</code> — in proportion to how often <em>just those two</em> populations’ alleles show up unambiguously elsewhere at this variant. GLA shrinkage (see above) generalises <strong>per pair</strong>, not only as a fallback for <code>p_i + p_j == 0</code> (the singleton case): it continuously discounts the raw ratio by <code>w_ij</code> = (pair <code>(i,j)</code>’s own ambiguous-het count) / (this variant’s total allele-weighted confidence — every population’s unambiguous alt alleles, hom-alt carriers counted 2x, plus every mixed pair’s own ambiguous-het count, not just pair <code>(i,j)</code>’s), blending toward the arm’s GLA proportions renormalised to just this pair:</p>
-<pre><code><span><span class="va">p_i</span><span class="op">/</span><span class="op">(</span><span class="va">p_i</span><span class="op">+</span><span class="va">p_j</span><span class="op">)</span>  <span class="op">&lt;-</span>  <span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">w_ij</span><span class="op">)</span> <span class="op">*</span> <span class="va">p_i</span><span class="op">/</span><span class="op">(</span><span class="va">p_i</span><span class="op">+</span><span class="va">p_j</span><span class="op">)</span> <span class="op">+</span> <span class="va">w_ij</span> <span class="op">*</span> <span class="va">GLA_i</span><span class="op">[</span><span class="va">arm</span><span class="op">]</span> <span class="op">/</span> <span class="op">(</span><span class="va">GLA_i</span><span class="op">[</span><span class="va">arm</span><span class="op">]</span> <span class="op">+</span> <span class="va">GLA_j</span><span class="op">[</span><span class="va">arm</span><span class="op">]</span><span class="op">)</span></span></code></pre>
-<p>Renormalising to the pair (instead of blending each population’s raw <code>GLA_k[arm]</code> in directly) is what guarantees an ambiguous AFR/EUR het is never assigned any dosage toward a third population like NAT, no matter how strongly shrinkage applies — only AFR and EUR ever receive a share. <code>w_ij = 0</code> leaves the raw ratio untouched; <code>w_ij = 1</code> (pair <code>(i,j)</code>’s only alt carriers are its own ambiguous hets) falls back entirely to the pair-conditioned GLA ratio instead of a flat 0.5/0.5 — same continuum as the two-population case, applied independently per pair.</p>
+<p><strong>Distribute the ambiguous alleles proportionally, per pair.</strong> A mixed-pair heterozygote in pair <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mi>i</mi><mo>,</mo><mi>j</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(i,j)</annotation></semantics></math> carries exactly one alt allele but its parental origin is unknown, so it’s split using the conditional ratio <code>p_i / (p_i + p_j)</code> — in proportion to how often <em>just those two</em> populations’ alleles show up unambiguously elsewhere at this variant. Shrinkage toward 1/2 (see above) generalises <strong>per pair</strong>, not only as a fallback for <code>p_i + p_j == 0</code> (the singleton case): it continuously discounts the raw ratio by <code>w_ij</code> = (pair <code>(i,j)</code>’s own ambiguous-het count) / (this variant’s total allele-weighted confidence — every population’s unambiguous alt alleles, hom-alt carriers counted 2x, plus every mixed pair’s own ambiguous-het count, not just pair <code>(i,j)</code>’s), blending toward an even split within the pair:</p>
+<pre><code><span><span class="va">p_i</span><span class="op">/</span><span class="op">(</span><span class="va">p_i</span><span class="op">+</span><span class="va">p_j</span><span class="op">)</span>  <span class="op">&lt;-</span>  <span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">w_ij</span><span class="op">)</span> <span class="op">*</span> <span class="va">p_i</span><span class="op">/</span><span class="op">(</span><span class="va">p_i</span><span class="op">+</span><span class="va">p_j</span><span class="op">)</span> <span class="op">+</span> <span class="va">w_ij</span> <span class="op">*</span> <span class="fl">0.5</span></span></code></pre>
+<p>The blend stays inside the pair, so an ambiguous AFR/EUR het is never assigned any dosage toward a third population like NAT, no matter how strongly shrinkage applies — only AFR and EUR ever receive a share. <code>w_ij = 0</code> leaves the raw ratio untouched; <code>w_ij = 1</code> (pair <code>(i,j)</code>’s only alt carriers are its own ambiguous hets) gives exactly 0.5/0.5 — same continuum as the two-population case, applied independently per pair.</p>
 </li>
 </ol>
-<p>With K=2 there’s only one mixed code and one pair, and <code>GLA_AFR[arm] + GLA_EUR[arm] = 1</code> by construction, so the pair-conditioned target collapses to plain <code>GLA_AFR[arm]</code> and this reduces exactly to the p1/p2 formulas above.</p>
+<p>With K=2 there’s only one mixed code and one pair, so this reduces exactly to the p1/p2 formulas above.</p>
 </div>
 </div>
 <div class="section level3">
@@ -719,14 +734,14 @@ chr19   518686  554919  1.17    1.35    85  0   0   0   1   ...</code></pre>
 </tr></tbody>
 </table>
 <p>To install bcftools for faster VCF reading:</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="co"># macOS</span></span>
-<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="ex">brew</span> install bcftools</span>
-<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a></span>
-<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co"># Debian / Ubuntu</span></span>
-<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="fu">sudo</span> apt install bcftools</span>
-<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a></span>
-<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a><span class="co"># Conda / pixi</span></span>
-<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="ex">conda</span> install <span class="at">-c</span> bioconda bcftools</span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="co"># macOS</span></span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a><span class="ex">brew</span> install bcftools</span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a><span class="co"># Debian / Ubuntu</span></span>
+<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a><span class="fu">sudo</span> apt install bcftools</span>
+<span id="cb17-6"><a href="#cb17-6" tabindex="-1"></a></span>
+<span id="cb17-7"><a href="#cb17-7" tabindex="-1"></a><span class="co"># Conda / pixi</span></span>
+<span id="cb17-8"><a href="#cb17-8" tabindex="-1"></a><span class="ex">conda</span> install <span class="at">-c</span> bioconda bcftools</span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="compiler">Compiler<a class="anchor" aria-label="anchor" href="#compiler"></a>

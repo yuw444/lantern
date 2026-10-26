@@ -25,7 +25,7 @@ combination."><meta property="og:image" content="https://yuw444.github.io/lanter
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -92,7 +92,6 @@ combination.</p>
 <span>  <span class="va">msp_path</span>,</span>
 <span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"dosage"</span>, <span class="st">"haplotype"</span><span class="op">)</span>,</span>
 <span>  chrom <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  use_gla <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -134,19 +133,6 @@ If the contig can't be resolved, all variants are queried and filtered
 in R instead (slower, more memory, same result).</p></dd>
 
 
-<dt id="arg-use-gla">use_gla<a class="anchor" aria-label="anchor" href="#arg-use-gla"></a></dt>
-<dd><p>Logical, <code>mode = "dosage"</code> only. When <code>TRUE</code>
-(default), per-arm GLA (global local ancestry) shrinkage is computed
-and applied automatically (see the "Core Algorithm" section of the
-package's <code>CLAUDE.md</code> for the formula/rationale). When
-<code>FALSE</code>, GLA shrinkage is skipped entirely and the split
-reproduces the original pre-shrinkage p[k] estimator exactly,
-including its 0.5/0.5 singleton fallback – equivalent to calling
-<code><a href="split_diploid_multi.html">split_diploid_multi</a></code> with <code>gla = NULL</code>. Ignored
-(no effect) when <code>mode = "haplotype"</code>, which is deterministic
-and has no ambiguous ratio to shrink.</p></dd>
-
-
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
 <dd><p>Print step-by-step progress messages.</p></dd>
 
@@ -178,6 +164,21 @@ and has no ambiguous ratio to shrink.</p></dd>
 <dd><p>List of intersection/filtering statistics.</p></dd>
 
 </dl></div>
+    <div id="shrinkage-toward-dosage-mode-">
+    <h2>Shrinkage toward 1/2 (dosage mode)</h2>
+    <p>A mixed-ancestry
+  heterozygote carries one haplotype from each of its two ancestries, so
+  which one holds the alt allele cannot be read off the genotype. Its
+  allele is split between the two ancestries in proportion to the
+  variant's unambiguous carriers (the raw ratio), shrunk toward 1/2 by
+  \(w\), the share of the variant's alt-allele evidence that comes from
+  ambiguous heterozygotes:
+  $$p = (1 - w)\, p_{raw} + w / 2.$$
+  A variant carried only by ambiguous heterozygotes (\(w = 1\)) is
+  split 1/2 : 1/2. With K populations every pair is shrunk toward 1/2
+  in the same way. <code>mode = "haplotype"</code> is deterministic and
+  applies no shrinkage.</p>
+    </div>
     <div id="see-also">
     <h2>See also</h2>
     <div class="dont-index"><p><code><a href="write_ancestry_gds.html">write_ancestry_gds</a></code>, <code><a href="ancestry_smmat.html">ancestry_smmat</a></code></p></div>

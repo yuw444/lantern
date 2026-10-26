@@ -37,7 +37,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.1</span>
       </span>
     </div>
 
@@ -103,285 +103,263 @@ binary, continuous, and count phenotypes</h1>
     
     
 <!--
-This is the SOURCE for vignettes/real-data-chr19.Rmd. It requires the
-gitignored raw/ JHS cohort data (see CLAUDE.md) and is never built by
-R CMD check / pkgdown directly -- CI only ever sees the pre-rendered
-vignettes/real-data-chr19.Rmd. After editing this file, re-knit it locally
-(where raw/ exists) from the repo root:
+Source for lantern/vignettes/real-data-chr19.Rmd. It needs the gitignored
+raw/ JHS cohort data, so it is kept outside the package (Bioconductor does
+not allow .orig files in vignettes/) and the package ships only the
+pre-rendered .Rmd. After editing, re-knit from the repo root where raw/
+exists:
 
   pixi run Rscript -e '
-    setwd("lantern/vignettes")
-    knitr::knit("real-data-chr19.Rmd.orig", output = "real-data-chr19.Rmd")
+    setwd("vignettes-src")
+    knitr::knit("real-data-chr19.Rmd.orig",
+                output = "../lantern/vignettes/real-data-chr19.Rmd")
   '
 
 then commit both files together.
 -->
+<p>This vignette was run on data that cannot be shared, so its code is
+shown with the output it produced, but it is not re-run when the package
+is built. <code><a href="../articles/lantern.html">vignette("lantern")</a></code> runs the same steps on data
+included in the package.</p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>This vignette runs the complete Step 1 → 2 → 3 pipeline on real
-genotype data from the Jackson Heart Study (JHS) cohort — chromosome 19,
-3 313 samples, local ancestry inferred as African (AFR) / European (EUR)
-— and demonstrates <code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> with all three response
-types GMMAT supports: binary (logistic), continuous (linear), and count
-(Poisson). Only the <code>family</code> argument (and the simulated
-phenotype) changes between them; everything else about the call is
-identical, which is the point — swap those two inputs and the same code
-handles your own binary, continuous, or count phenotype.</p>
-<ul>
-<li>For matrix-level intuition on the two splitting methods, see
-<code><a href="../articles/split-intuition.html">vignette("split-intuition")</a></code>.</li>
-<li>For building <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> inputs from your own VCF
-+ MSP files (including K &gt; 2 populations), see
-<code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code> — this JHS cohort only has
-AFR/EUR calls, so Steps 1–2 below are shown for two populations, but
-nothing changes for K &gt; 2 beyond the MSP header.</li>
-</ul>
+<p>We analyse chromosome 19 in 3,313 African American participants of
+the Jackson Heart Study (JHS), whose local ancestry was inferred as
+African (AFR) or European (EUR) with RFMix. The phenotypes are
+simulated, so we do not expect any associations; the aim is to show the
+workflow on data of realistic size, and how to analyse binary,
+continuous and count traits. Only the <code>family</code> argument
+changes between them.</p>
+</div>
+<div class="section level2">
+<h2 id="split-and-write-the-genotypes">1 Split and write the genotypes<a class="anchor" aria-label="anchor" href="#split-and-write-the-genotypes"></a>
+</h2>
+<p><code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> reads the phased genotypes and the
+local ancestry and returns one dosage matrix per ancestry.
+<code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code> saves each to a GDS file for
+GMMAT.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Step 1: split. Step 2: write one GDS per population.</span></span>
-<span><span class="va">split_real</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">split_real</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span></span>
 <span>  vcf_path <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"LANTERN.phased.bcf"</span><span class="op">)</span>,</span>
 <span>  msp_path <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"LANTERN_chr19.msp.tsv.gz"</span><span class="op">)</span>,</span>
 <span>  mode     <span class="op">=</span> <span class="st">"dosage"</span>,</span>
 <span>  chrom    <span class="op">=</span> <span class="st">"chr19"</span>,</span>
-<span>  verbose  <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  verbose  <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; === LANTERN Ancestry Split (Step 1, mode = dosage) ===</span></span>
-<span><span class="co">#&gt; Step 1: Parsing RFMix MSP file...</span></span>
-<span><span class="co">#&gt;   Parsing MSP file: ../../raw/LANTERN_chr19.msp.tsv.gz</span></span>
-<span><span class="co">#&gt;     Found 3416 samples, 2 populations</span></span>
-<span><span class="co">#&gt;     Pop codes: AFR = 0, EUR = 1</span></span>
-<span><span class="co">#&gt;   MSP samples: 3416  Tracts: 653</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 2: Querying VCF sample IDs...</span></span>
-<span><span class="co">#&gt;   VCF samples: 3314</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 3: Intersecting samples...</span></span>
-<span><span class="co">#&gt;   Common: 3313</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 4: Parsing VCF genotypes...</span></span>
-<span><span class="co">#&gt;   44275 variant lines read</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 5: Mapping variants to ancestry tracts...</span></span>
-<span><span class="co">#&gt;   Filtered to chrom chr19: 44275 variants</span></span>
-<span><span class="co">#&gt;   Variants with no tract: 2 (dropped)</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 6: Broadcasting ancestry to variants...</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 7: Splitting genotypes by ancestry (dosage)...</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Step 8: Filtering monomorphic variants...</span></span>
-<span><span class="co">#&gt;   Removed 2 monomorphic variants</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; === Step 1 Complete: 44271 variants, 3313 samples, 2 populations ===</span></span>
-<span><span class="va">gds_paths</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/write_ancestry_gds.html">write_ancestry_gds</a></span><span class="op">(</span><span class="va">split_real</span>, <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="co">#&gt; === LANTERN Write Ancestry GDS (Step 2) ===</span></span>
-<span><span class="co">#&gt; Writing GDS for AFR (1/2)...</span></span>
-<span><span class="co">#&gt; Writing GDS for EUR (2/2)...</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; === Step 2 Complete: 2 GDS file(s) written to /tmp/Rtmp7oMjf3/file699222c4d9016 ===</span></span>
-<span></span>
-<span><span class="va">ids</span> <span class="op">&lt;-</span> <span class="va">split_real</span><span class="op">$</span><span class="va">sample_ids</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Samples:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">ids</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Samples: 3313</span></span></code></pre></div>
+<span><span class="va">gds_paths</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/write_ancestry_gds.html">write_ancestry_gds</a></span><span class="op">(</span><span class="va">split_real</span>, <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">split_real</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span>   <span class="co"># variants x samples</span></span>
+<span><span class="co">#&gt; [1] 44271  3313</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="gene-group-file-and-kinship">1 Gene-group file and kinship<a class="anchor" aria-label="anchor" href="#gene-group-file-and-kinship"></a>
+<h2 id="gene-groups-and-kinship">2 Gene groups and kinship<a class="anchor" aria-label="anchor" href="#gene-groups-and-kinship"></a>
 </h2>
-<p>The full chr19 gene-group file covers 1 442 genes; to keep this
-vignette fast we use a 5-gene subset here (the pattern is identical for
-the full file — just point <code>gene_group_file</code> at it and expect
-several minutes per <code>SMMAT()</code> call instead of seconds).</p>
+<p>The gene-group file lists, for each gene, the variants to test
+together (six columns: gene, chromosome, position, reference allele,
+alternate allele and weight). The full file for chromosome 19 has 1,442
+genes. To keep the examples quick we first use the first five genes:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">genes_full</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.table</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"genes_chr19_smmat.tsv"</span><span class="op">)</span>, header <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>                           sep <span class="op">=</span> <span class="st">"\t"</span>,</span>
-<span>                           col.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene"</span>, <span class="st">"chrom"</span>, <span class="st">"pos"</span>, <span class="st">"ref"</span>, <span class="st">"alt"</span>, <span class="st">"weight"</span><span class="op">)</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">genes_full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.table</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"genes_chr19_smmat.tsv"</span><span class="op">)</span>, sep <span class="op">=</span> <span class="st">"\t"</span>,</span>
+<span>                         col.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene"</span>, <span class="st">"chrom"</span>, <span class="st">"pos"</span>, <span class="st">"ref"</span>, <span class="st">"alt"</span>, <span class="st">"weight"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">genes_small</span> <span class="op">&lt;-</span> <span class="va">genes_full</span><span class="op">[</span><span class="va">genes_full</span><span class="op">$</span><span class="va">gene</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">genes_full</span><span class="op">$</span><span class="va">gene</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span><span class="op">]</span>, <span class="op">]</span></span>
-<span></span>
-<span><span class="va">kinship</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"LANTERN_kinship_rds.rds"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">common_ids</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">intersect</a></span><span class="op">(</span><span class="va">ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">kinship</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Genes:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">genes_small</span><span class="op">$</span><span class="va">gene</span><span class="op">)</span><span class="op">)</span>, <span class="st">"  Common samples:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Genes: 5   Common samples: 3313</span></span></code></pre></div>
-<p><code>genes_small</code> is passed straight to
-<code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code>’s <code>gene_group_file</code> argument
-below as a data.frame — no
-<code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile()</a></code>/<code><a href="https://rdrr.io/r/utils/write.table.html" class="external-link">write.table()</a></code>/<code><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink()</a></code>
-needed; <code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> manages the temporary file GMMAT
-requires internally and cleans it up automatically. A plain file path
-still works too, if that’s more convenient for your own pipeline.</p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/table.html" class="external-link">table</a></span><span class="op">(</span><span class="va">genes_small</span><span class="op">$</span><span class="va">gene</span><span class="op">)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;    A1BG   ABCA7 ABHD17A   ABHD8   ACER1 </span></span>
+<span><span class="co">#&gt;      41     205      18      30      12</span></span></code></pre></div>
+<p><code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> accepts the gene groups either as a
+data frame, as here, or as a path to a tab-separated file without a
+header.</p>
+<p>The kinship matrix holds the genetic relatedness between every pair
+of participants, which JHS needs because it includes relatives. We keep
+the participants present in both the genotypes and the kinship
+matrix:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">kinship</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">RAW</span>, <span class="st">"LANTERN_kinship_rds.rds"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">common_ids</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">intersect</a></span><span class="op">(</span><span class="va">split_real</span><span class="op">$</span><span class="va">sample_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">kinship</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 3313</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="binary-phenotype-family-binomial">2 Binary phenotype (<code>family = binomial()</code>)<a class="anchor" aria-label="anchor" href="#binary-phenotype-family-binomial"></a>
+<h2 id="binary-phenotype-family-binomial">3 Binary phenotype (<code>family = binomial()</code>)<a class="anchor" aria-label="anchor" href="#binary-phenotype-family-binomial"></a>
 </h2>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<p>We simulate a binary trait with 30% cases and test the five genes.
+The trait has no genetic effect, so the p-values should look like random
+draws between 0 and 1. <code>MAF.range = c(0, 0.05)</code> restricts the
+test to variants with a minor allele frequency below 5%.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">pheno_binary</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="va">common_ids</span>, y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, <span class="fl">1</span>, <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">res_binary</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_binary</span>, <span class="va">y</span> <span class="op">~</span> <span class="fl">1</span>, <span class="va">kinship</span>, <span class="va">genes_small</span>,</span>
-<span>                              family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">binomial</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"logit"</span><span class="op">)</span>,</span>
-<span>                              MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">res_binary</span><span class="op">$</span><span class="va">results</span><span class="op">)</span></span>
+<span>                             family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">binomial</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"logit"</span><span class="op">)</span>,</span>
+<span>                             MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">res_binary</span><span class="op">$</span><span class="va">results</span></span>
 <span><span class="co">#&gt;      gene     p_AFR     p_EUR  p_cauchy</span></span>
-<span><span class="co">#&gt; 1    A1BG 0.1492616 0.7938859 0.3997315</span></span>
-<span><span class="co">#&gt; 2   ABCA7 0.2031324 0.1900808 0.1964182</span></span>
-<span><span class="co">#&gt; 3 ABHD17A 0.8941616 0.2588411 0.7459638</span></span>
-<span><span class="co">#&gt; 4   ABHD8 0.5078140 0.3048892 0.3958519</span></span>
-<span><span class="co">#&gt; 5   ACER1 0.2196545 0.3375616 0.2692847</span></span></code></pre></div>
+<span><span class="co">#&gt; 1    A1BG 0.1910291 0.8511402 0.5807953</span></span>
+<span><span class="co">#&gt; 2   ABCA7 0.2370768 0.2414580 0.2392513</span></span>
+<span><span class="co">#&gt; 3 ABHD17A 0.8004630 0.2707219 0.5784290</span></span>
+<span><span class="co">#&gt; 4   ABHD8 0.5268295 0.3263750 0.4186764</span></span>
+<span><span class="co">#&gt; 5   ACER1 0.1019934 0.4238325 0.1752785</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="continuous-phenotype-family-gaussian">3 Continuous phenotype (<code>family = gaussian()</code>)<a class="anchor" aria-label="anchor" href="#continuous-phenotype-family-gaussian"></a>
+<h2 id="continuous-phenotype-family-gaussian">4 Continuous phenotype (<code>family = gaussian()</code>)<a class="anchor" aria-label="anchor" href="#continuous-phenotype-family-gaussian"></a>
 </h2>
-<p>Only the <code>family</code> and the simulated <code>y</code>
-change:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pheno_cont</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="va">common_ids</span>, y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">res_cont</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_cont</span>, <span class="va">y</span> <span class="op">~</span> <span class="fl">1</span>, <span class="va">kinship</span>, <span class="va">genes_small</span>,</span>
-<span>                            family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">gaussian</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"identity"</span><span class="op">)</span>,</span>
-<span>                            MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">res_cont</span><span class="op">$</span><span class="va">results</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      gene      p_AFR     p_EUR  p_cauchy</span></span>
-<span><span class="co">#&gt; 1    A1BG 0.32271246 0.5564923 0.4305589</span></span>
-<span><span class="co">#&gt; 2   ABCA7 0.71670271 0.3862533 0.5684131</span></span>
-<span><span class="co">#&gt; 3 ABHD17A 0.31455720 0.6888582 0.5024665</span></span>
-<span><span class="co">#&gt; 4   ABHD8 0.56071838 0.8476944 0.7593479</span></span>
-<span><span class="co">#&gt; 5   ACER1 0.09634068 0.7767378 0.2485254</span></span></code></pre></div>
+<span>                           family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">gaussian</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"identity"</span><span class="op">)</span>,</span>
+<span>                           MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">res_cont</span><span class="op">$</span><span class="va">results</span></span>
+<span><span class="co">#&gt;      gene     p_AFR     p_EUR  p_cauchy</span></span>
+<span><span class="co">#&gt; 1    A1BG 0.3506940 0.4525619 0.3989808</span></span>
+<span><span class="co">#&gt; 2   ABCA7 0.7445442 0.5025977 0.6443147</span></span>
+<span><span class="co">#&gt; 3 ABHD17A 0.3875901 0.5085255 0.4461201</span></span>
+<span><span class="co">#&gt; 4   ABHD8 0.5353446 0.7577901 0.6674988</span></span>
+<span><span class="co">#&gt; 5   ACER1 0.0807992 0.7691255 0.2014519</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="count-phenotype-family-poisson">4 Count phenotype (<code>family = poisson()</code>)<a class="anchor" aria-label="anchor" href="#count-phenotype-family-poisson"></a>
+<h2 id="count-phenotype-family-poisson">5 Count phenotype (<code>family = poisson()</code>)<a class="anchor" aria-label="anchor" href="#count-phenotype-family-poisson"></a>
 </h2>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pheno_count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="va">common_ids</span>, y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, lambda <span class="op">=</span> <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">res_count</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_count</span>, <span class="va">y</span> <span class="op">~</span> <span class="fl">1</span>, <span class="va">kinship</span>, <span class="va">genes_small</span>,</span>
-<span>                             family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">poisson</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"log"</span><span class="op">)</span>,</span>
-<span>                             MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">res_count</span><span class="op">$</span><span class="va">results</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      gene      p_AFR      p_EUR  p_cauchy</span></span>
-<span><span class="co">#&gt; 1    A1BG 0.89654667 0.02082793 0.0513362</span></span>
-<span><span class="co">#&gt; 2   ABCA7 0.45190129 0.66226067 0.5638687</span></span>
-<span><span class="co">#&gt; 3 ABHD17A 0.29662855 0.75212153 0.5428024</span></span>
-<span><span class="co">#&gt; 4   ABHD8 0.11031509 0.65554127 0.2321887</span></span>
-<span><span class="co">#&gt; 5   ACER1 0.04307048 0.81238745 0.1048616</span></span></code></pre></div>
+<span>                            family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">poisson</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"log"</span><span class="op">)</span>,</span>
+<span>                            MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">res_count</span><span class="op">$</span><span class="va">results</span></span>
+<span><span class="co">#&gt;      gene      p_AFR      p_EUR   p_cauchy</span></span>
+<span><span class="co">#&gt; 1    A1BG 0.93625150 0.01910404 0.05382056</span></span>
+<span><span class="co">#&gt; 2   ABCA7 0.44142308 0.62752028 0.53760581</span></span>
+<span><span class="co">#&gt; 3 ABHD17A 0.36705820 0.62199107 0.49354335</span></span>
+<span><span class="co">#&gt; 4   ABHD8 0.12410494 0.52148951 0.22338299</span></span>
+<span><span class="co">#&gt; 5   ACER1 0.02775486 0.92972375 0.08877860</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="adjusting-for-covariates">5 Adjusting for covariates<a class="anchor" aria-label="anchor" href="#adjusting-for-covariates"></a>
+<h2 id="adjusting-for-covariates">6 Adjusting for covariates<a class="anchor" aria-label="anchor" href="#adjusting-for-covariates"></a>
 </h2>
-<p>Covariates (age, sex, genotype PCs, batch, …) are just additional
-terms in <code>formula</code>, as long as the matching columns exist in
-<code>pheno</code> — nothing else about the call changes. Here we add a
-simulated <code>age</code> and <code>sex</code> to the
-continuous-phenotype example from Section 3:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<p>Covariates are added to the formula, and the phenotype table must
+contain a column for each. Here we add a simulated age and sex to the
+continuous trait. Genotype principal components are added the same way,
+for example <code>y ~ age + sex + PC1 + PC2</code>.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="va">age</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, mean <span class="op">=</span> <span class="fl">55</span>, sd <span class="op">=</span> <span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">sex</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"F"</span>, <span class="st">"M"</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pheno_cov</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id <span class="op">=</span> <span class="va">common_ids</span>, y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>                         age <span class="op">=</span> <span class="va">age</span>, sex <span class="op">=</span> <span class="va">sex</span><span class="op">)</span></span>
+<span><span class="va">pheno_cov</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>id  <span class="op">=</span> <span class="va">common_ids</span>,</span>
+<span>                        y   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                        age <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, mean <span class="op">=</span> <span class="fl">55</span>, sd <span class="op">=</span> <span class="fl">12</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                        sex <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"F"</span>, <span class="st">"M"</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">common_ids</span><span class="op">)</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">res_cov</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_cov</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>, <span class="va">genes_small</span>,</span>
-<span>                           family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">gaussian</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"identity"</span><span class="op">)</span>,</span>
+<span>                          family    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">gaussian</a></span><span class="op">(</span>link <span class="op">=</span> <span class="st">"identity"</span><span class="op">)</span>,</span>
+<span>                          MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">res_cov</span><span class="op">$</span><span class="va">results</span></span>
+<span><span class="co">#&gt;      gene      p_AFR     p_EUR   p_cauchy</span></span>
+<span><span class="co">#&gt; 1    A1BG 0.15641519 0.9971322 0.99416662</span></span>
+<span><span class="co">#&gt; 2   ABCA7 0.52732801 0.9354582 0.87777687</span></span>
+<span><span class="co">#&gt; 3 ABHD17A 0.03468871 0.5286584 0.06923531</span></span>
+<span><span class="co">#&gt; 4   ABHD8 0.76451429 0.6051571 0.69848074</span></span>
+<span><span class="co">#&gt; 5   ACER1 0.09922975 0.1134745 0.10589289</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="testing-every-gene-with-ancestry-weights">7 Testing every gene, with ancestry weights<a class="anchor" aria-label="anchor" href="#testing-every-gene-with-ancestry-weights"></a>
+</h2>
+<p>A real analysis tests all genes. Passing <code>ancestry_counts</code>
+and <code>variant_info</code> from <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code> weights
+each gene’s Cauchy combination by how many participants of each ancestry
+carry its variants, so the African-ancestry test, with more data in this
+cohort, counts for more. This takes a few minutes.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">res_full</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_cov</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>, <span class="va">genes_full</span>,</span>
+<span>                           ancestry_counts <span class="op">=</span> <span class="va">split_real</span><span class="op">$</span><span class="va">ancestry_counts</span>,</span>
+<span>                           variant_info    <span class="op">=</span> <span class="va">split_real</span><span class="op">$</span><span class="va">variant_info</span>,</span>
 <span>                           MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">res_cov</span><span class="op">$</span><span class="va">results</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      gene      p_AFR      p_EUR   p_cauchy</span></span>
-<span><span class="co">#&gt; 1    A1BG 0.78973635 0.63646754 0.72827528</span></span>
-<span><span class="co">#&gt; 2   ABCA7 0.61704448 0.70291389 0.66320132</span></span>
-<span><span class="co">#&gt; 3 ABHD17A 0.05755877 0.08958273 0.07014252</span></span>
-<span><span class="co">#&gt; 4   ABHD8 0.61776792 0.42714304 0.52459912</span></span>
-<span><span class="co">#&gt; 5   ACER1 0.10424888 0.90977046 0.57638538</span></span></code></pre></div>
-<p>Genotype PCs from your own PCA (e.g. <code>PC1</code>, …,
-<code>PC10</code>) work the same way: add them as columns to
-<code>pheno</code> and to <code>formula</code>
-(<code>y ~ age + sex + PC1 + PC2 + ...</code>).</p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">res_full</span><span class="op">$</span><span class="va">results</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 1442</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">res_full</span><span class="op">$</span><span class="va">results</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">res_full</span><span class="op">$</span><span class="va">results</span><span class="op">$</span><span class="va">p_cauchy</span><span class="op">)</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;                gene        p_AFR      p_EUR w_AFR w_EUR     p_cauchy</span></span>
+<span><span class="co">#&gt; 541           JSRP1 8.323902e-05 0.98326189  2283   121 8.767381e-05</span></span>
+<span><span class="co">#&gt; 301 ENSG00000266953 1.060329e-03 0.29933312  2262   132 1.122045e-03</span></span>
+<span><span class="co">#&gt; 789          PDCD2L 1.294066e-03 0.29521556  2262   132 1.369337e-03</span></span>
+<span><span class="co">#&gt; 911            RDH8 2.275999e-03 0.10761493  2268   122 2.395803e-03</span></span>
+<span><span class="co">#&gt; 29              AMH 3.948893e-03 0.02433174  2283   121 4.122772e-03</span></span>
+<span><span class="co">#&gt; 393         FAM187B 4.087365e-03 0.24260357  2270   120 4.300353e-03</span></span></code></pre></div>
+<p>The trait is simulated without genetic effects, so the smallest of
+these p-values are what we expect by chance among 1,442 genes.</p>
 </div>
 <div class="section level2">
-<h2 id="where-to-get-gene-group-files-for-other-speciesbuilds">6 Where to get gene-group files for other species/builds<a class="anchor" aria-label="anchor" href="#where-to-get-gene-group-files-for-other-speciesbuilds"></a>
+<h2 id="other-smmat-tests-and-the-raw-smmat-output">8 Other SMMAT tests and the raw SMMAT output<a class="anchor" aria-label="anchor" href="#other-smmat-tests-and-the-raw-smmat-output"></a>
 </h2>
-<p><code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code>’s <code>gene_group_file</code> (a
-data.frame or a path — both resolve to the same six columns, no header:
-<code>gene chrom pos ref alt weight</code>) is fundamentally
-<strong>your own called variants intersected with gene
-boundaries</strong> — it’s specific to your VCF, not something you
-download ready-made for an arbitrary variant set.
-<code>genes_full</code>, used above, was built exactly this way: gene
-coordinates for chr19 intersected against the JHS variant positions.</p>
-<p>What you <em>can</em> download are the gene/exon coordinate
-annotations to intersect against your own variants (e.g. with
-<code>bedtools intersect</code> or a GTF-parsing script), for human or
-any other species:</p>
-<ul>
-<li>
-<a href="https://www.ensembl.org/biomart/martview" class="external-link">Ensembl
-BioMart</a> — gene/exon coordinates for hundreds of species
-(GRCh37/GRCh38 human builds included); the classic way to export a
-custom gene coordinate table.</li>
-<li>
-<a href="https://www.gencodegenes.org/" class="external-link">GENCODE</a> — comprehensive
-human and mouse gene annotation (GTF/GFF3), the reference set most
-rare-variant pipelines build their gene definitions from.</li>
-<li>
-<a href="https://genome.ucsc.edu/cgi-bin/hgTables" class="external-link">UCSC Table
-Browser</a> — RefSeq/ Ensembl/GENCODE gene tables for many species and
-genome builds, with a web UI for filtering/exporting BED files
-directly.</li>
-<li>
-<a href="https://www.ncbi.nlm.nih.gov/refseq/" class="external-link">NCBI RefSeq</a> — the
-underlying gene/transcript annotation source Ensembl/UCSC also
-redistribute.</li>
-<li>
-<a href="https://annovar.openbioinformatics.org/en/latest/" class="external-link">ANNOVAR</a> —
-if you already annotate variants with ANNOVAR
-(<code>refGene</code>/<code>ensGene</code> databases), its per-variant
-gene assignments can be reshaped directly into the
-<code>gene_group_file</code> format.</li>
-</ul>
-<p>Once you have gene boundaries in hand, build the file per chromosome:
-for each variant in your VCF, look up which gene’s boundary it falls in
-(chromosome + position), write one row per (gene, variant) pair, and set
-<code>weight</code> (commonly <code>1</code> for an unweighted burden
-test, or a MAF-based weight — see <code>MAF.weights.beta</code> in
-<code><a href="../reference/ancestry_smmat.html">?ancestry_smmat</a></code>).</p>
+<p>By default SMMAT runs its efficient hybrid test
+(<code>tests = "E"</code>), and <code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> combines
+its p-values (column <code>E.pval</code>). Any other
+<code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">GMMAT::SMMAT()</a></code> argument can be passed through. For example,
+to combine the SKAT-O p-values instead, request the test with
+<code>tests</code> and name the p-value column with
+<code>p_col</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">res_o</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds_paths</span>, <span class="va">pheno_cov</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>, <span class="va">genes_small</span>,</span>
+<span>                        tests <span class="op">=</span> <span class="st">"O"</span>, p_col <span class="op">=</span> <span class="st">"O.pval"</span>,</span>
+<span>                        MAF.range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0.05</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">res_o</span><span class="op">$</span><span class="va">results</span></span>
+<span><span class="co">#&gt;      gene      p_AFR     p_EUR  p_cauchy</span></span>
+<span><span class="co">#&gt; 1    A1BG 0.10482040 1.0000000 1.0000000</span></span>
+<span><span class="co">#&gt; 2   ABCA7 0.55127668 0.8140770 0.7219490</span></span>
+<span><span class="co">#&gt; 3 ABHD17A 0.09469666 0.4024312 0.1622402</span></span>
+<span><span class="co">#&gt; 4   ABHD8 0.86583872 0.6980776 0.8102436</span></span>
+<span><span class="co">#&gt; 5   ACER1 0.31388522 0.1143865 0.1724220</span></span></code></pre></div>
+<p>The unsummarised output of each ancestry’s SMMAT run is kept in
+<code>smmat_results</code>, for example the number of variants tested in
+each gene and the burden test statistics:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">res_o</span><span class="op">$</span><span class="va">smmat_results</span><span class="op">$</span><span class="va">AFR</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     group n.variants miss.min miss.mean miss.max     freq.min    freq.mean</span></span>
+<span><span class="co">#&gt; 1    A1BG         41        0         0        0 0.000000e+00 0.0004614505</span></span>
+<span><span class="co">#&gt; 2   ABCA7        205        0         0        0 0.000000e+00 0.0006208557</span></span>
+<span><span class="co">#&gt; 3 ABHD17A         18        0         0        0 0.000000e+00 0.0002688709</span></span>
+<span><span class="co">#&gt; 4   ABHD8         30        0         0        0 0.000000e+00 0.0004144215</span></span>
+<span><span class="co">#&gt; 5   ACER1         12        0         0        0 6.036825e-05 0.0005768488</span></span>
+<span><span class="co">#&gt;      freq.max    B.score     B.var     B.pval     S.pval     O.pval     O.minp</span></span>
+<span><span class="co">#&gt; 1 0.003760942  161.15499  70793.09 0.54472257 0.05548930 0.10482040 0.05548930</span></span>
+<span><span class="co">#&gt; 2 0.008212858  661.37964 484767.25 0.34215607 0.57782108 0.55127668 0.34215607</span></span>
+<span><span class="co">#&gt; 3 0.001266088 -228.15606  15523.39 0.06706888 0.08400736 0.09469666 0.05159878</span></span>
+<span><span class="co">#&gt; 4 0.002712375  -87.38494  45539.21 0.68217974 0.70218112 0.86583872 0.68217974</span></span>
+<span><span class="co">#&gt; 5 0.003697555 -185.41816  21148.99 0.20231204 0.38163155 0.31388522 0.20231204</span></span>
+<span><span class="co">#&gt;   O.minp.rho</span></span>
+<span><span class="co">#&gt; 1       0.00</span></span>
+<span><span class="co">#&gt; 2       1.00</span></span>
+<span><span class="co">#&gt; 3       0.25</span></span>
+<span><span class="co">#&gt; 4       1.00</span></span>
+<span><span class="co">#&gt; 5       1.00</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="other-ways-to-adapt-this-to-your-own-data">7 Other ways to adapt this to your own data<a class="anchor" aria-label="anchor" href="#other-ways-to-adapt-this-to-your-own-data"></a>
+<h2 id="more-than-two-populations">9 More than two populations<a class="anchor" aria-label="anchor" href="#more-than-two-populations"></a>
 </h2>
-<ul>
-<li>
-<strong>More than two populations</strong>: nothing above changes
-structurally — <code>gds_paths</code> just needs one named entry per
-population (see <code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code>, Part B,
-for building the underlying
-<code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>/<code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code> inputs
-at K &gt; 2).</li>
-<li>
-<strong>Full gene set / real analysis</strong>: pass
-<code>genes_full</code> instead of the 5-gene subset as
-<code>gene_group_file</code>, and pass
-<code>ancestry_counts = split_real$ancestry_counts</code> /
-<code>variant_info = split_real$variant_info</code> (from Step 1) to
-<code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> to weight the Cauchy combination by each
-gene’s local ancestry proportions instead of equal weights.</li>
-<li>
-<strong>Every <code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">GMMAT::SMMAT()</a></code> argument is
-available</strong>: <code>MAF.range</code>, <code>miss.cutoff</code>,
-<code>method</code>, and <code>ncores</code> are named parameters here
-with the same meaning as in a direct <code>SMMAT()</code> call; anything
-else <code>SMMAT()</code> accepts — <code>tests</code>,
-<code>rho</code>, <code>MAF.weights.beta</code>,
-<code>missing.method</code>, <code>use.minor.allele</code>,
-<code>auto.flip</code>, <code>Garbage.Collection</code>,
-<code>group.file.sep</code>, <code>meta.file.prefix</code> — forwards
-through <code>...</code> unchanged. See <code><a href="../reference/ancestry_smmat.html">?ancestry_smmat</a></code> and
-<code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">?GMMAT::SMMAT</a></code>.</li>
-<li>
-<strong>Raw per-population results</strong>: every call above also
-returns <code>$smmat_results</code>, a named list of the untouched
-<code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">GMMAT::SMMAT()</a></code> data.frames
-(e.g. <code>res_binary$smmat_results$AFR</code>) if you need columns
-beyond the summarized <code>p_&lt;POP&gt;</code>/<code>p_cauchy</code>
-in <code>$results</code> — burden-only p-values, variant counts, allele
-frequencies, etc.</li>
-</ul>
+<p>This cohort only has African and European local ancestry. With an MSP
+file that declares more populations, <code><a href="../reference/ancestry_split.html">ancestry_split()</a></code>
+returns one matrix per population and <code><a href="../reference/write_ancestry_gds.html">write_ancestry_gds()</a></code>
+one GDS file per population, and <code><a href="../reference/ancestry_smmat.html">ancestry_smmat()</a></code> is called
+in the same way. For example, with RFMix output for African, European
+and Native American ancestry (the file names are placeholders):</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">split3</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_split.html">ancestry_split</a></span><span class="op">(</span><span class="st">"cohort.vcf.gz"</span>, <span class="st">"cohort.msp.tsv"</span>, chrom <span class="op">=</span> <span class="st">"chr19"</span><span class="op">)</span></span>
+<span><span class="va">gds3</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/write_ancestry_gds.html">write_ancestry_gds</a></span><span class="op">(</span><span class="va">split3</span>, <span class="st">"gds"</span><span class="op">)</span>   <span class="co"># gds/AFR.gds, gds/EUR.gds, gds/NAT.gds</span></span>
+<span><span class="va">res3</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ancestry_smmat.html">ancestry_smmat</a></span><span class="op">(</span><span class="va">gds3</span>, <span class="va">pheno</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex</span>, <span class="va">kinship</span>, <span class="va">genes</span>,</span>
+<span>                         ancestry_counts <span class="op">=</span> <span class="va">split3</span><span class="op">$</span><span class="va">ancestry_counts</span>,</span>
+<span>                         variant_info    <span class="op">=</span> <span class="va">split3</span><span class="op">$</span><span class="va">variant_info</span><span class="op">)</span></span></code></pre></div>
+<p><code><a href="../articles/toy-vcf-msp-example.html">vignette("toy-vcf-msp-example")</a></code> builds a four-population
+example.</p>
+</div>
+<div class="section level2">
+<h2 id="gene-group-files-for-your-own-data">10 Gene-group files for your own data<a class="anchor" aria-label="anchor" href="#gene-group-files-for-your-own-data"></a>
+</h2>
+<p>A gene-group file is specific to your variants: it pairs each variant
+in your VCF with the gene whose boundaries contain it. The gene
+coordinates can be downloaded, for example from <a href="https://www.ensembl.org/biomart/martview" class="external-link">Ensembl BioMart</a>, <a href="https://www.gencodegenes.org/" class="external-link">GENCODE</a> or the <a href="https://genome.ucsc.edu/cgi-bin/hgTables" class="external-link">UCSC Table Browser</a>,
+and intersected with your variant positions, for instance with
+<code>bedtools intersect</code> or in R. The file used above was made
+this way. A weight of 1 for every variant gives an unweighted test;
+SMMAT can also weight variants by allele frequency (see
+<code>MAF.weights.beta</code> in <code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">?GMMAT::SMMAT</a></code>).</p>
 </div>
   </div>
 

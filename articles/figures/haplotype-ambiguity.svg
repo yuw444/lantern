@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 530" width="1500" height="530" role="img" aria-label="Three people with local ancestry tracts at a rare variant. Person A is African on both haplotypes, so the allele is African. Person B is European on both, so the allele is European. Person C is African on one haplotype and European on the other, so without phase the allele's ancestry is ambiguous." style="font-family: 'Source Sans 3', 'Source Sans Pro', Helvetica, Arial, sans-serif">
+<title>Three people with local ancestry tracts at a rare variant. Person A is African on both haplotypes, so the allele is African. Person B is European on both, so the allele is European. Person C is African on one haplotype and European on the other, so without phase the allele's ancestry is ambiguous.</title>
+<rect width="1500" height="530" fill="#FFFFFF"/>
+
+<text x="700" y="22" text-anchor="middle" font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568">rare variant</text>
+<rect x="230" y="40" width="950" height="36" rx="8" fill="#F8C9A0"></rect>
+<rect x="230" y="88" width="730" height="36" rx="8" fill="#F8C9A0"></rect>
+<rect x="960" y="88" width="220" height="36" rx="8" fill="#B9CCF7"></rect>
+<rect x="230" y="190" width="630" height="36" rx="8" fill="#B9CCF7"></rect>
+<rect x="860" y="190" width="320" height="36" rx="8" fill="#F8C9A0"></rect>
+<rect x="230" y="238" width="950" height="36" rx="8" fill="#B9CCF7"></rect>
+<rect x="230" y="340" width="950" height="36" rx="8" fill="#F8C9A0"></rect>
+<rect x="230" y="388" width="240" height="36" rx="8" fill="#F8C9A0"></rect>
+<rect x="470" y="388" width="710" height="36" rx="8" fill="#B9CCF7"></rect>
+<line x1="700" y1="32" x2="700" y2="440" stroke="#00594F" stroke-width="3" stroke-dasharray="10 8"></line>
+<circle cx="700" cy="58" r="17" fill="#00594F"></circle>
+<circle cx="700" cy="256" r="17" fill="#00594F"></circle>
+<circle cx="700" cy="382" r="20" fill="#FFFFFF" stroke="#00594F" stroke-width="4"></circle>
+<text x="700" y="392" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="28" fill="#00594F">?</text>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#1A2233">
+<text x="0" y="92" font-weight="700">Person A</text>
+<text x="0" y="242" font-weight="700">Person B</text>
+<text x="0" y="392" font-weight="700">Person C</text>
+</g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="27" fill="#4A5568" text-anchor="end">
+<text x="214" y="66">H1</text><text x="214" y="114">H2</text><text x="214" y="216">H1</text><text x="214" y="264">H2</text><text x="214" y="366">H1</text><text x="214" y="414">H2</text>
+</g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" font-weight="700">
+<text x="1214" y="92" fill="#C2410C">AF/AF → AF</text>
+<text x="1214" y="242" fill="#1D4ED8">EU/EU → EU</text>
+<text x="1214" y="392" fill="#00594F">AF/EU het → ?</text>
+</g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568">
+<rect x="230" y="482" width="44" height="24" rx="6" fill="#F8C9A0"/><text x="286" y="503">African (AF) tract</text>
+<rect x="560" y="482" width="44" height="24" rx="6" fill="#B9CCF7"/><text x="616" y="503">European (EU) tract</text>
+<circle cx="912" cy="494" r="12" fill="#00594F"/><text x="936" y="503">rare allele</text>
+<text x="1120" y="503">H1, H2: the two haplotypes</text>
+</g>
+</svg>

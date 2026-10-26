@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 520" width="1500" height="520" role="img" aria-label="Bar chart: switch error is 35.3 percent for singletons, 9.3 percent for MAC 2 to 5, and falls to about 2.4 percent by MAC 1000 (SHAPEIT5, UK Biobank; Hofmeister et al. 2023)" style="font-family: 'Source Sans 3', 'Source Sans Pro', Helvetica, Arial, sans-serif">
+<title>Bar chart: switch error is 35.3 percent for singletons, 9.3 percent for MAC 2 to 5, and falls to about 2.4 percent by MAC 1000 (SHAPEIT5, UK Biobank; Hofmeister et al. 2023)</title>
+<rect width="1500" height="520" fill="#FFFFFF"/>
+
+<line x1="40" y1="420" x2="1490" y2="420" stroke="#8A94A6" stroke-width="3"></line>
+<rect x="80" y="85" width="110" height="335" rx="6" fill="#007066"></rect>
+<rect x="240" y="331" width="110" height="89" rx="6" fill="#A3C2BC"></rect>
+<rect x="400" y="367" width="110" height="53" rx="6" fill="#A3C2BC"></rect>
+<rect x="560" y="379" width="110" height="41" rx="6" fill="#A3C2BC"></rect>
+<rect x="720" y="384" width="110" height="36" rx="6" fill="#A3C2BC"></rect>
+<rect x="880" y="388" width="110" height="32" rx="6" fill="#A3C2BC"></rect>
+<rect x="1040" y="386" width="110" height="34" rx="6" fill="#A3C2BC"></rect>
+<rect x="1200" y="395" width="110" height="25" rx="6" fill="#A3C2BC"></rect>
+<rect x="1360" y="397" width="110" height="23" rx="6" fill="#A3C2BC"></rect>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#1A2233" text-anchor="middle" font-weight="700">
+<text x="135" y="70">35.3%</text><text x="295" y="316">9.3%</text><text x="455" y="352">5.6%</text><text x="615" y="364">4.4%</text><text x="775" y="369">3.8%</text><text x="935" y="373">3.3%</text><text x="1095" y="371">3.5%</text><text x="1255" y="380">2.7%</text><text x="1415" y="382">2.4%</text>
+</g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568" text-anchor="middle">
+<text x="135" y="460">1</text><text x="295" y="460">2–5</text><text x="455" y="460">6–10</text><text x="615" y="460">11–20</text><text x="775" y="460">21–50</text><text x="935" y="460">51–100</text><text x="1095" y="460">101–200</text><text x="1255" y="460">201–500</text><text x="1415" y="460">501–1k</text>
+</g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568" text-anchor="middle">
+<text x="765" y="505">Minor allele count</text>
+<text x="40" y="30" text-anchor="start" font-weight="700" fill="#1A2233">Switch-error rate</text>
+</g>
+</svg>
