@@ -41,6 +41,51 @@ gene-based SMMAT test from the GMMAT package separately for each ancestry,
 and combines the per-ancestry p-values for each gene into one p-value with
 the Cauchy combination test.
 
+## Which haplotype carries the rare allele?
+
+For most carriers the split is clear. If both copies of the chromosome are
+African at the variant (person A below), the allele is African; if both
+are European (person B), it is European. The hard case is a heterozygote
+with one African and one European copy (person C): the allele is on one of
+the two, and only phase, the assignment of each allele to a chromosome
+copy, says which.
+
+![Local ancestry at a rare variant in three people. Only person C, with one African and one European haplotype, needs phase to tell which ancestry the allele belongs to.](figures/haplotype-ambiguity.svg){width=100%}
+
+Phasing is least reliable for exactly the variants that rare-variant tests
+use. In the UK Biobank, SHAPEIT5 places a singleton allele on the wrong
+haplotype about one time in three:
+
+![SHAPEIT5 switch-error rate by minor allele count in the UK Biobank (Hofmeister et al. 2023).](figures/switch-error.svg){width=100%}
+
+lantern therefore offers two ways to split. `mode = "haplotype"` uses the
+phased genotypes, like Tractor does for common variants. `mode = "dosage"`
+does not use phase: it shares each ambiguous heterozygote's allele between
+the two ancestries, with shares estimated from the variant's other carriers
+(`vignette("split-intuition")` explains how).
+
+## What the split gains
+
+We simulated traits on chromosome 19 of 3,313 participants of the Jackson
+Heart Study, about 80% of whose ancestry is African, with causal effects
+carried by alleles on African haplotypes, on European haplotypes, or on
+both. The ancestry-split tests did not inflate the type I error, down to
+a significance level of \(2.5 \times 10^{-6}\). When the effect was carried on the
+European (here the minority-ancestry) haplotypes, testing the European
+dosage had about twice the power of SMMAT on unsplit genotypes, and the
+unphased split about 1.5 times. When the effect was on African haplotypes
+or on both, the African-ancestry test lost almost nothing against SMMAT.
+
+![Power at a significance level of 0.05 by mean effect size, averaged over 100 genes (Wang et al. 2026). AF, EU: tests of the African and European dosages; Phased, Unphased: `mode = "haplotype"` and `mode = "dosage"`.](figures/power.svg){width=100%}
+
+The details are in the preprint: Wang Y, Tuftin B, Raffield LM, Hidalgo B,
+Kerns SL, DeWan AT, Leal SM, Auer PL (2026). LANTERN: Leveraging local
+ancestry tracts to enhance rare-variant aggregate association testing.
+*medRxiv*. doi:
+[10.64898/2026.04.24.26351693](https://doi.org/10.64898/2026.04.24.26351693).
+
+## Workflow
+
 The analysis has three steps, one function each:
 
 1. `ancestry_split()` reads a phased VCF and an RFMix local-ancestry file

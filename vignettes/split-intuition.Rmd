@@ -46,7 +46,20 @@ For most samples the split is obvious. An AFR/AFR sample's alleles are all
 African, and an AFR/EUR sample with genotype 2 has one allele on each
 haplotype, so one African and one European. The only ambiguous case is an
 AFR/EUR heterozygote: it has one alternate allele, and we cannot tell
-which haplotype carries it.
+which haplotype carries it. The full rule:
+
+| Ancestry | Genotype | African dosage | European dosage |
+|----------|:--------:|:--------------:|:---------------:|
+| AFR/AFR  | 2 | 2 | 0 |
+| AFR/AFR  | 1 | 1 | 0 |
+| AFR/EUR  | 2 | 1 | 1 |
+| **AFR/EUR** | **1** | **\(p_\text{AFR}\)** | **\(p_\text{EUR}\)** |
+| EUR/EUR  | 2 | 0 | 2 |
+| EUR/EUR  | 1 | 0 | 1 |
+
+Genotype 0 contributes nothing to either dosage. Only the highlighted row
+needs the proportions \(p_\text{AFR}\) and \(p_\text{EUR} = 1 -
+p_\text{AFR}\), which are estimated from the other rows as shown below.
 
 Consider a single variant in six samples:
 

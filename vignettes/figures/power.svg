@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2070 650" width="2070" height="650" role="img" aria-label="Simulated power of LANTERN and SMMAT at alpha 0.05, by where the causal effect lies" style="font-family: 'Source Sans 3', 'Source Sans Pro', Helvetica, Arial, sans-serif">
+<title>Simulated power of LANTERN and SMMAT at alpha 0.05, by where the causal effect lies</title>
+<rect width="2070" height="650" fill="#FFFFFF"/>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#1A2233">
+<line x1="40" y1="30" x2="106" y2="30" stroke="#C2410C" stroke-width="5"/><circle cx="73" cy="30" r="8" fill="#C2410C" stroke="#C2410C" stroke-width="4"/><text x="120" y="40">LANTERN-AF-Phased</text>
+<line x1="443" y1="30" x2="509" y2="30" stroke="#C2410C" stroke-width="5" stroke-dasharray="12 7"/><circle cx="476" cy="30" r="8" fill="#FFFFFF" stroke="#C2410C" stroke-width="4"/><text x="523" y="40">LANTERN-AF-Unphased</text>
+<line x1="877" y1="30" x2="943" y2="30" stroke="#1D4ED8" stroke-width="5"/><circle cx="910" cy="30" r="8" fill="#1D4ED8" stroke="#1D4ED8" stroke-width="4"/><text x="957" y="40">LANTERN-EU-Phased</text>
+<line x1="1280" y1="30" x2="1346" y2="30" stroke="#1D4ED8" stroke-width="5" stroke-dasharray="12 7"/><circle cx="1313" cy="30" r="8" fill="#FFFFFF" stroke="#1D4ED8" stroke-width="4"/><text x="1360" y="40">LANTERN-EU-Unphased</text>
+<line x1="1714" y1="30" x2="1780" y2="30" stroke="#4B5563" stroke-width="5" stroke-dasharray="2 9" stroke-linecap="round"/><text x="1794" y="40">SMMAT</text>
+</g>
+<text x="365" y="98" text-anchor="middle" font-size="32" font-weight="700" fill="#C2410C">Causal on AF haplotypes</text>
+<g transform="translate(0,120)">
+
+<g stroke="#E0EAE7" stroke-width="2"><line x1="100" y1="30" x2="640" y2="30"></line><line x1="100" y1="135" x2="640" y2="135"></line><line x1="100" y1="240" x2="640" y2="240"></line><line x1="100" y1="345" x2="640" y2="345"></line></g>
+<line x1="100" y1="450" x2="640" y2="450" stroke="#8A94A6" stroke-width="3"></line>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="end"><text x="88" y="458">0</text><text x="88" y="353">0.25</text><text x="88" y="248">0.50</text><text x="88" y="143">0.75</text><text x="88" y="38">1.00</text></g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="middle"><text x="100" y="484">1.0</text><text x="232" y="484">1.5</text><text x="365" y="484">2.0</text><text x="498" y="484">2.5</text><text x="630" y="484">3.0</text><text x="365" y="522" font-size="28">Mean effect size</text></g>
+<text x="16" y="240" transform="rotate(-90 16 240)" text-anchor="middle" font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568">Power</text>
+<polyline points="100,139 232,101 365,81 498,69 630,62" fill="none" stroke="#4B5563" stroke-width="6" stroke-dasharray="2 10" stroke-linecap="round"></polyline>
+<polyline points="100,360 232,304 365,258 498,224 630,198" fill="none" stroke="#1D4ED8" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,137 232,100 365,81 498,69 630,62" fill="none" stroke="#C2410C" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,420 232,409 365,394 498,375 630,356" fill="none" stroke="#1D4ED8" stroke-width="5"></polyline>
+<polyline points="100,130 232,95 365,77 498,66 630,59" fill="none" stroke="#C2410C" stroke-width="5"></polyline>
+<g fill="#FFFFFF" stroke="#1D4ED8" stroke-width="4"><circle cx="100" cy="360" r="8"></circle><circle cx="232" cy="304" r="8"></circle><circle cx="365" cy="258" r="8"></circle><circle cx="498" cy="224" r="8"></circle><circle cx="630" cy="198" r="8"></circle></g>
+<g fill="#FFFFFF" stroke="#C2410C" stroke-width="4"><circle cx="100" cy="137" r="8"></circle><circle cx="232" cy="100" r="8"></circle><circle cx="365" cy="81" r="8"></circle><circle cx="498" cy="69" r="8"></circle><circle cx="630" cy="62" r="8"></circle></g>
+<g fill="#1D4ED8"><circle cx="100" cy="420" r="8"></circle><circle cx="232" cy="409" r="8"></circle><circle cx="365" cy="394" r="8"></circle><circle cx="498" cy="375" r="8"></circle><circle cx="630" cy="356" r="8"></circle></g>
+<g fill="#C2410C"><circle cx="100" cy="130" r="8"></circle><circle cx="232" cy="95" r="8"></circle><circle cx="365" cy="77" r="8"></circle><circle cx="498" cy="66" r="8"></circle><circle cx="630" cy="59" r="8"></circle></g>
+
+</g>
+<text x="1055" y="98" text-anchor="middle" font-size="32" font-weight="700" fill="#1D4ED8">Causal on EU haplotypes</text>
+<g transform="translate(690,120)">
+
+<g stroke="#E0EAE7" stroke-width="2"><line x1="100" y1="30" x2="640" y2="30"></line><line x1="100" y1="135" x2="640" y2="135"></line><line x1="100" y1="240" x2="640" y2="240"></line><line x1="100" y1="345" x2="640" y2="345"></line></g>
+<line x1="100" y1="450" x2="640" y2="450" stroke="#8A94A6" stroke-width="3"></line>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="end"><text x="88" y="458">0</text><text x="88" y="353">0.25</text><text x="88" y="248">0.50</text><text x="88" y="143">0.75</text><text x="88" y="38">1.00</text></g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="middle"><text x="100" y="484">1.0</text><text x="232" y="484">1.5</text><text x="365" y="484">2.0</text><text x="498" y="484">2.5</text><text x="630" y="484">3.0</text><text x="365" y="522" font-size="28">Mean effect size</text></g>
+<text x="16" y="240" transform="rotate(-90 16 240)" text-anchor="middle" font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568">Power</text>
+<polyline points="100,350 232,297 365,252 498,218 630,192" fill="none" stroke="#4B5563" stroke-width="6" stroke-dasharray="2 10" stroke-linecap="round"></polyline>
+<polyline points="100,400 232,366 365,330 498,297 630,268" fill="none" stroke="#C2410C" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,297 232,235 365,193 498,166 630,147" fill="none" stroke="#1D4ED8" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,427 232,424 365,421 498,415 630,408" fill="none" stroke="#C2410C" stroke-width="5"></polyline>
+<polyline points="100,245 232,184 365,150 498,129 630,115" fill="none" stroke="#1D4ED8" stroke-width="5"></polyline>
+<g fill="#FFFFFF" stroke="#C2410C" stroke-width="4"><circle cx="100" cy="400" r="8"></circle><circle cx="232" cy="366" r="8"></circle><circle cx="365" cy="330" r="8"></circle><circle cx="498" cy="297" r="8"></circle><circle cx="630" cy="268" r="8"></circle></g>
+<g fill="#FFFFFF" stroke="#1D4ED8" stroke-width="4"><circle cx="100" cy="297" r="8"></circle><circle cx="232" cy="235" r="8"></circle><circle cx="365" cy="193" r="8"></circle><circle cx="498" cy="166" r="8"></circle><circle cx="630" cy="147" r="8"></circle></g>
+<g fill="#C2410C"><circle cx="100" cy="427" r="8"></circle><circle cx="232" cy="424" r="8"></circle><circle cx="365" cy="421" r="8"></circle><circle cx="498" cy="415" r="8"></circle><circle cx="630" cy="408" r="8"></circle></g>
+<g fill="#1D4ED8"><circle cx="100" cy="245" r="8"></circle><circle cx="232" cy="184" r="8"></circle><circle cx="365" cy="150" r="8"></circle><circle cx="498" cy="129" r="8"></circle><circle cx="630" cy="115" r="8"></circle></g>
+
+</g>
+<text x="1745" y="98" text-anchor="middle" font-size="32" font-weight="700" fill="#1A2233">Causal on both (Mixed)</text>
+<g transform="translate(1380,120)">
+
+<g stroke="#E0EAE7" stroke-width="2"><line x1="100" y1="30" x2="640" y2="30"></line><line x1="100" y1="135" x2="640" y2="135"></line><line x1="100" y1="240" x2="640" y2="240"></line><line x1="100" y1="345" x2="640" y2="345"></line></g>
+<line x1="100" y1="450" x2="640" y2="450" stroke="#8A94A6" stroke-width="3"></line>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="end"><text x="88" y="458">0</text><text x="88" y="353">0.25</text><text x="88" y="248">0.50</text><text x="88" y="143">0.75</text><text x="88" y="38">1.00</text></g>
+<g font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="30" fill="#4A5568" text-anchor="middle"><text x="100" y="484">1.0</text><text x="232" y="484">1.5</text><text x="365" y="484">2.0</text><text x="498" y="484">2.5</text><text x="630" y="484">3.0</text><text x="365" y="522" font-size="28">Mean effect size</text></g>
+<text x="16" y="240" transform="rotate(-90 16 240)" text-anchor="middle" font-family="Source Sans 3, Helvetica, Arial, sans-serif" font-size="28" fill="#4A5568">Power</text>
+<polyline points="100,116 232,85 365,69 498,60 630,54" fill="none" stroke="#4B5563" stroke-width="6" stroke-dasharray="2 10" stroke-linecap="round"></polyline>
+<polyline points="100,226 232,167 365,134 498,114 630,101" fill="none" stroke="#1D4ED8" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,124 232,90 365,73 498,64 630,57" fill="none" stroke="#C2410C" stroke-width="5" stroke-dasharray="14 9"></polyline>
+<polyline points="100,242 232,180 365,145 498,124 630,110" fill="none" stroke="#1D4ED8" stroke-width="5"></polyline>
+<polyline points="100,129 232,93 365,75 498,65 630,59" fill="none" stroke="#C2410C" stroke-width="5"></polyline>
+<g fill="#FFFFFF" stroke="#1D4ED8" stroke-width="4"><circle cx="100" cy="226" r="8"></circle><circle cx="232" cy="167" r="8"></circle><circle cx="365" cy="134" r="8"></circle><circle cx="498" cy="114" r="8"></circle><circle cx="630" cy="101" r="8"></circle></g>
+<g fill="#FFFFFF" stroke="#C2410C" stroke-width="4"><circle cx="100" cy="124" r="8"></circle><circle cx="232" cy="90" r="8"></circle><circle cx="365" cy="73" r="8"></circle><circle cx="498" cy="64" r="8"></circle><circle cx="630" cy="57" r="8"></circle></g>
+<g fill="#1D4ED8"><circle cx="100" cy="242" r="8"></circle><circle cx="232" cy="180" r="8"></circle><circle cx="365" cy="145" r="8"></circle><circle cx="498" cy="124" r="8"></circle><circle cx="630" cy="110" r="8"></circle></g>
+<g fill="#C2410C"><circle cx="100" cy="129" r="8"></circle><circle cx="232" cy="93" r="8"></circle><circle cx="365" cy="75" r="8"></circle><circle cx="498" cy="65" r="8"></circle><circle cx="630" cy="59" r="8"></circle></g>
+
+</g>
+</svg>

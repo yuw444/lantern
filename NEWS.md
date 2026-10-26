@@ -26,7 +26,9 @@ Changes in response to the Bioconductor review.
 * Removed the unused global-ancestry helpers and the internal
   `centromeres_hg38` table.
 * Vignettes rewritten for readability; the real-data vignette's source is
-  no longer shipped in `vignettes/`.
+  no longer shipped in `vignettes/`. The Getting started vignette now
+  explains the method's motivation with figures from the LANTERN preprint.
+* Added `citation("lantern")` for the preprint (Wang et al. 2026, medRxiv).
 
 # lantern 0.99.0
 

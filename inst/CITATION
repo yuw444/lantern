@@ -1,0 +1,16 @@
+bibentry(
+  bibtype = "Article",
+  title   = "{LANTERN}: Leveraging Local Ancestry Tracts to Enhance Rare-Variant Aggregate Association Testing",
+  author  = c(person("Yu", "Wang"), person("Bjoernar", "Tuftin"),
+              person("Laura M.", "Raffield"), person("Bertha", "Hidalgo"),
+              person("Sarah L.", "Kerns"), person("Andrew T.", "DeWan"),
+              person("Suzanne M.", "Leal"), person("Paul L.", "Auer")),
+  journal = "medRxiv",
+  year    = "2026",
+  doi     = "10.64898/2026.04.24.26351693",
+  textVersion = paste(
+    "Wang Y, Tuftin B, Raffield LM, Hidalgo B, Kerns SL, DeWan AT, Leal SM,",
+    "Auer PL (2026). LANTERN: Leveraging local ancestry tracts to enhance",
+    "rare-variant aggregate association testing. medRxiv.",
+    "doi:10.64898/2026.04.24.26351693")
+)
