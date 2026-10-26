@@ -9,12 +9,10 @@ lantern/
 ├── DESCRIPTION / NAMESPACE        # package metadata
 ├── R/
 │   ├── ancestry_split.R           # Step 1: ancestry_split(), split_diploid()/split_haplotype() C wrappers, read_bed_file()
-│   ├── global_ancestry.R          # GLA shrinkage: .assign_arm(), .compute_arm_gla()
 │   ├── write_ancestry_gds.R       # Step 2: write_ancestry_gds(), write_dosage_gds()
 │   ├── ancestry_smmat.R           # Step 3: ancestry_smmat() (SMMAT + per-gene ancestry weights + Cauchy combination)
 │   ├── utils.R                    # cauchy_combine()
 │   ├── lantern-package.R          # package-level roxygen doc
-│   └── sysdata.rda                # internal data: centromeres_hg38 (from inst/scripts/centromeres_hg38.R)
 ├── src/                           # C backend — see lantern/src/AGENTS.md
 │   ├── ancestry.c                 # ALL core algorithms: p1/p2 split, phased split, bed reader
 │   ├── ancestry.h                 # C function declarations
@@ -22,7 +20,7 @@ lantern/
 │   └── Makevars                   # PKG_CFLAGS = -O3 -march=native -Wall
 └── tests/testthat/
     ├── test-ancestry_split.R      # split_diploid/split_diploid_multi/split_haplotype + ancestry_split()
-    ├── test-global_ancestry.R     # GLA shrinkage (.assign_arm, .compute_arm_gla, weighted blend)
+    ├── test-shrinkage.R           # shrinkage blend (gla/arm_id target), ancestry_split() 1/2 target end-to-end
     ├── test-ancestry_smmat.R      # ancestry_smmat() + cauchy_combine()
     ├── test-write_ancestry_gds.R  # write_dosage_gds()/write_ancestry_gds()
     └── test-utils.R
@@ -42,7 +40,7 @@ lantern/
 | `ancestry_smmat(gds_paths, pheno, formula, kinship, gene_group_file, ...)` | `R/ancestry_smmat.R` | (R-only; wraps `GMMAT::glmmkin()`/`GMMAT::SMMAT()`) |
 | `cauchy_combine(p_values, weights)` | `R/utils.R` | (R-only) |
 
-`gla`/`arm_id` on `split_diploid()`/`split_diploid_multi()` are optional; `NULL` (the default) disables GLA shrinkage and reproduces the pre-shrinkage 0.5/0.5 singleton-fallback estimator exactly. See root `CLAUDE.md`'s "Core Algorithm" section for the shrinkage formula and rationale.
+`gla`/`arm_id` on `split_diploid()`/`split_diploid_multi()` are an optional, generic shrinkage target (one row of target proportions per group, `arm_id` = 0-based row per variant); `NULL` (the default) means no shrinkage, i.e. the raw ratio with only the flat 0.5/0.5 singleton fallback. `ancestry_split()` (and the `ancestry_split_dosage()` matrix path) always passes a one-row 1/K target (`.uniform_shrink_target()`), i.e. shrinkage toward 1/2 for every pair; it has no switch for this. See root `CLAUDE.md`'s "Core Algorithm" section for the formula and rationale.
 
 ## BUILD & TEST
 
@@ -63,4 +61,4 @@ If the install fails with `Rboolean` errors, your `~/.R/Makevars` is being used 
 - **Ancestry codes**: integer 1/2/3 (2-population) or 1..K/mixed (K-population), never strings or factors.
 - **No dead C entry points**: every function registered in `init.c` should have a real R-level caller somewhere in `R/*.R`. (Two functions violating this — `write_vcf_with_ancestry_C`, `subset_vcf_by_range_C` — were removed entirely in July 2026 after being found unreachable from any R code.)
 
-See root `CLAUDE.md` for the full pipeline architecture, the GLA shrinkage algorithm, and current known issues (that file's "Known Issues" section is the source of truth — don't duplicate it here).
+See root `CLAUDE.md` for the full pipeline architecture, the shrinkage-toward-1/2 algorithm, and current known issues (that file's "Known Issues" section is the source of truth — don't duplicate it here).
