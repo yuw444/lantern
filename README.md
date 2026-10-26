@@ -5,7 +5,8 @@
 [![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://yuw444.github.io/lantern/)
 [![GitHub](https://img.shields.io/badge/source-GitHub-lightgrey)](https://github.com/yuw444/lantern)
 
-Full documentation, vignettes, and function reference: **[https://yuw444.github.io/lantern/](https://yuw444.github.io/lantern/)**. MedRxiv: [2026.04. 24.26351693](https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf)
+Full documentation, vignettes, and function reference: **[https://yuw444.github.io/lantern/](https://yuw444.github.io/lantern/)**.
+Preprint: [doi:10.64898/2026.04.24.26351693](https://doi.org/10.64898/2026.04.24.26351693) (medRxiv).
 
 ## Features
 
@@ -19,9 +20,10 @@ Full documentation, vignettes, and function reference: **[https://yuw444.github.
 
 ## Installation
 
-SeqArray is a Bioconductor package and is not found by
-`devtools::install_github()` automatically. Use BiocManager to handle
-dependencies in one step:
+lantern has been submitted to Bioconductor and is under review
+([Bioconductor/BiocContributions#229](https://github.com/Bioconductor/BiocContributions/issues/229)).
+Until it is accepted, install the development version from GitHub with
+BiocManager, which also installs the Bioconductor dependencies (SeqArray):
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -29,6 +31,26 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 
 BiocManager::install("yuw444/lantern")
 ```
+
+Once lantern is available from Bioconductor, this becomes
+`BiocManager::install("lantern")`.
+
+`ancestry_smmat()` (the association tests) also needs GMMAT from CRAN and
+SeqVarTools from Bioconductor:
+
+```r
+install.packages("GMMAT")
+BiocManager::install("SeqVarTools")
+```
+
+## Citation
+
+If you use lantern, please cite the preprint (`citation("lantern")`):
+
+> Wang Y, Tuftin B, Raffield LM, Hidalgo B, Kerns SL, DeWan AT, Leal SM,
+> Auer PL (2026). LANTERN: Leveraging local ancestry tracts to enhance
+> rare-variant aggregate association testing. *medRxiv*.
+> doi:[10.64898/2026.04.24.26351693](https://doi.org/10.64898/2026.04.24.26351693)
 
 ## Quick Start
 
