@@ -8,15 +8,16 @@ vignette: >
 ---
 
 <!--
-This is the SOURCE for vignettes/real-data-chr19.Rmd. It requires the
-gitignored raw/ JHS cohort data (see CLAUDE.md) and is never built by
-R CMD check / pkgdown directly -- CI only ever sees the pre-rendered
-vignettes/real-data-chr19.Rmd. After editing this file, re-knit it locally
-(where raw/ exists) from the repo root:
+Source for lantern/vignettes/real-data-chr19.Rmd. It needs the gitignored
+raw/ JHS cohort data, so it is kept outside the package (Bioconductor does
+not allow .orig files in vignettes/) and the package ships only the
+pre-rendered .Rmd. After editing, re-knit from the repo root where raw/
+exists:
 
   pixi run Rscript -e '
-    setwd("lantern/vignettes")
-    knitr::knit("real-data-chr19.Rmd.orig", output = "real-data-chr19.Rmd")
+    setwd("vignettes-src")
+    knitr::knit("real-data-chr19.Rmd.orig",
+                output = "../lantern/vignettes/real-data-chr19.Rmd")
   '
 
 then commit both files together.
@@ -24,105 +25,80 @@ then commit both files together.
 
 
 
+This vignette was run on data that cannot be shared, so its code is shown
+with the output it produced, but it is not re-run when the package is
+built. `vignette("lantern")` runs the same steps on data included in the
+package.
 
 ## Overview
 
-This vignette runs the complete Step 1 → 2 → 3 pipeline on real genotype
-data from the Jackson Heart Study (JHS) cohort — chromosome 19, 3 313
-samples, local ancestry inferred as African (AFR) / European (EUR) — and
-demonstrates `ancestry_smmat()` with all three response types GMMAT
-supports: binary (logistic), continuous (linear), and count (Poisson).
-Only the `family` argument (and the simulated phenotype) changes between
-them; everything else about the call is identical, which is the point —
-swap those two inputs and the same code handles your own binary,
-continuous, or count phenotype.
+We analyse chromosome 19 in 3,313 African American participants of the
+Jackson Heart Study (JHS), whose local ancestry was inferred as African
+(AFR) or European (EUR) with RFMix. The phenotypes are simulated, so we do
+not expect any associations; the aim is to show the workflow on data of
+realistic size, and how to analyse binary, continuous and count traits.
+Only the `family` argument changes between them.
 
-* For matrix-level intuition on the two splitting methods, see
-  `vignette("split-intuition")`.
-* For building `ancestry_split()` inputs from your own VCF + MSP files
-  (including K > 2 populations), see `vignette("toy-vcf-msp-example")` —
-  this JHS cohort only has AFR/EUR calls, so Steps 1–2 below are shown for
-  two populations, but nothing changes for K > 2 beyond the MSP header.
+## 1 Split and write the genotypes
+
+`ancestry_split()` reads the phased genotypes and the local ancestry and
+returns one dosage matrix per ancestry. `write_ancestry_gds()` saves each
+to a GDS file for GMMAT.
 
 
 ``` r
-# Step 1: split. Step 2: write one GDS per population.
 split_real <- ancestry_split(
   vcf_path = file.path(RAW, "LANTERN.phased.bcf"),
   msp_path = file.path(RAW, "LANTERN_chr19.msp.tsv.gz"),
   mode     = "dosage",
   chrom    = "chr19",
-  verbose  = TRUE
+  verbose  = FALSE
 )
-#> === LANTERN Ancestry Split (Step 1, mode = dosage) ===
-#> Step 1: Parsing RFMix MSP file...
-#>   Parsing MSP file: ../../raw/LANTERN_chr19.msp.tsv.gz
-#>     Found 3416 samples, 2 populations
-#>     Pop codes: AFR = 0, EUR = 1
-#>   MSP samples: 3416  Tracts: 653
-#> 
-#> Step 2: Querying VCF sample IDs...
-#>   VCF samples: 3314
-#> 
-#> Step 3: Intersecting samples...
-#>   Common: 3313
-#> 
-#> Step 4: Parsing VCF genotypes...
-#>   44275 variant lines read
-#> 
-#> Step 5: Mapping variants to ancestry tracts...
-#>   Filtered to chrom chr19: 44275 variants
-#>   Variants with no tract: 2 (dropped)
-#> 
-#> Step 6: Broadcasting ancestry to variants...
-#> 
-#> Step 7: Splitting genotypes by ancestry (dosage)...
-#> 
-#> Step 8: Filtering monomorphic variants...
-#>   Removed 2 monomorphic variants
-#> 
-#> === Step 1 Complete: 44271 variants, 3313 samples, 2 populations ===
-gds_paths <- write_ancestry_gds(split_real, tempfile(), verbose = TRUE)
-#> === LANTERN Write Ancestry GDS (Step 2) ===
-#> Writing GDS for AFR (1/2)...
-#> Writing GDS for EUR (2/2)...
-#> 
-#> === Step 2 Complete: 2 GDS file(s) written to /tmp/Rtmp7oMjf3/file699222c4d9016 ===
-
-ids <- split_real$sample_ids
-cat("Samples:", length(ids), "\n")
-#> Samples: 3313
+gds_paths <- write_ancestry_gds(split_real, tempfile(), verbose = FALSE)
+dim(split_real$AFR)   # variants x samples
+#> [1] 44271  3313
 ```
 
+## 2 Gene groups and kinship
 
-## 1  Gene-group file and kinship
-
-The full chr19 gene-group file covers 1 442 genes; to keep this vignette
-fast we use a 5-gene subset here (the pattern is identical for the full
-file — just point `gene_group_file` at it and expect several minutes per
-`SMMAT()` call instead of seconds).
+The gene-group file lists, for each gene, the variants to test together
+(six columns: gene, chromosome, position, reference allele, alternate
+allele and weight). The full file for chromosome 19 has
+1,442
+genes. To keep the examples quick we first use the first five genes:
 
 
 ``` r
-genes_full  <- read.table(file.path(RAW, "genes_chr19_smmat.tsv"), header = FALSE,
-                           sep = "\t",
-                           col.names = c("gene", "chrom", "pos", "ref", "alt", "weight"))
+genes_full <- read.table(file.path(RAW, "genes_chr19_smmat.tsv"), sep = "\t",
+                         col.names = c("gene", "chrom", "pos", "ref", "alt", "weight"))
 genes_small <- genes_full[genes_full$gene %in% unique(genes_full$gene)[1:5], ]
-
-kinship <- readRDS(file.path(RAW, "LANTERN_kinship_rds.rds"))
-common_ids <- intersect(ids, rownames(kinship))
-cat("Genes:", length(unique(genes_small$gene)), "  Common samples:", length(common_ids), "\n")
-#> Genes: 5   Common samples: 3313
+table(genes_small$gene)
+#> 
+#>    A1BG   ABCA7 ABHD17A   ABHD8   ACER1 
+#>      41     205      18      30      12
 ```
 
-`genes_small` is passed straight to `ancestry_smmat()`'s `gene_group_file`
-argument below as a data.frame — no `tempfile()`/`write.table()`/`unlink()`
-needed; `ancestry_smmat()` manages the temporary file GMMAT requires
-internally and cleans it up automatically. A plain file path still works
-too, if that's more convenient for your own pipeline.
+`ancestry_smmat()` accepts the gene groups either as a data frame, as
+here, or as a path to a tab-separated file without a header.
+
+The kinship matrix holds the genetic relatedness between every pair of
+participants, which JHS needs because it includes relatives. We keep the
+participants present in both the genotypes and the kinship matrix:
 
 
-## 2  Binary phenotype (`family = binomial()`)
+``` r
+kinship <- readRDS(file.path(RAW, "LANTERN_kinship_rds.rds"))
+common_ids <- intersect(split_real$sample_ids, rownames(kinship))
+length(common_ids)
+#> [1] 3313
+```
+
+## 3 Binary phenotype (`family = binomial()`)
+
+We simulate a binary trait with 30% cases and test the five genes. The
+trait has no genetic effect, so the p-values should look like random
+draws between 0 and 1. `MAF.range = c(0, 0.05)` restricts the test to
+variants with a minor allele frequency below 5%.
 
 
 ``` r
@@ -130,145 +106,188 @@ set.seed(1)
 pheno_binary <- data.frame(id = common_ids, y = rbinom(length(common_ids), 1, 0.3))
 
 res_binary <- ancestry_smmat(gds_paths, pheno_binary, y ~ 1, kinship, genes_small,
-                              family    = binomial(link = "logit"),
-                              MAF.range = c(0, 0.05), verbose = FALSE)
-print(res_binary$results)
+                             family    = binomial(link = "logit"),
+                             MAF.range = c(0, 0.05), verbose = FALSE)
+res_binary$results
 #>      gene     p_AFR     p_EUR  p_cauchy
-#> 1    A1BG 0.1492616 0.7938859 0.3997315
-#> 2   ABCA7 0.2031324 0.1900808 0.1964182
-#> 3 ABHD17A 0.8941616 0.2588411 0.7459638
-#> 4   ABHD8 0.5078140 0.3048892 0.3958519
-#> 5   ACER1 0.2196545 0.3375616 0.2692847
+#> 1    A1BG 0.1910291 0.8511402 0.5807953
+#> 2   ABCA7 0.2370768 0.2414580 0.2392513
+#> 3 ABHD17A 0.8004630 0.2707219 0.5784290
+#> 4   ABHD8 0.5268295 0.3263750 0.4186764
+#> 5   ACER1 0.1019934 0.4238325 0.1752785
 ```
 
-
-## 3  Continuous phenotype (`family = gaussian()`)
-
-Only the `family` and the simulated `y` change:
+## 4 Continuous phenotype (`family = gaussian()`)
 
 
 ``` r
 pheno_cont <- data.frame(id = common_ids, y = rnorm(length(common_ids)))
 
 res_cont <- ancestry_smmat(gds_paths, pheno_cont, y ~ 1, kinship, genes_small,
-                            family    = gaussian(link = "identity"),
-                            MAF.range = c(0, 0.05), verbose = FALSE)
-print(res_cont$results)
-#>      gene      p_AFR     p_EUR  p_cauchy
-#> 1    A1BG 0.32271246 0.5564923 0.4305589
-#> 2   ABCA7 0.71670271 0.3862533 0.5684131
-#> 3 ABHD17A 0.31455720 0.6888582 0.5024665
-#> 4   ABHD8 0.56071838 0.8476944 0.7593479
-#> 5   ACER1 0.09634068 0.7767378 0.2485254
+                           family    = gaussian(link = "identity"),
+                           MAF.range = c(0, 0.05), verbose = FALSE)
+res_cont$results
+#>      gene     p_AFR     p_EUR  p_cauchy
+#> 1    A1BG 0.3506940 0.4525619 0.3989808
+#> 2   ABCA7 0.7445442 0.5025977 0.6443147
+#> 3 ABHD17A 0.3875901 0.5085255 0.4461201
+#> 4   ABHD8 0.5353446 0.7577901 0.6674988
+#> 5   ACER1 0.0807992 0.7691255 0.2014519
 ```
 
-
-## 4  Count phenotype (`family = poisson()`)
+## 5 Count phenotype (`family = poisson()`)
 
 
 ``` r
 pheno_count <- data.frame(id = common_ids, y = rpois(length(common_ids), lambda = 3))
 
 res_count <- ancestry_smmat(gds_paths, pheno_count, y ~ 1, kinship, genes_small,
-                             family    = poisson(link = "log"),
-                             MAF.range = c(0, 0.05), verbose = FALSE)
-print(res_count$results)
-#>      gene      p_AFR      p_EUR  p_cauchy
-#> 1    A1BG 0.89654667 0.02082793 0.0513362
-#> 2   ABCA7 0.45190129 0.66226067 0.5638687
-#> 3 ABHD17A 0.29662855 0.75212153 0.5428024
-#> 4   ABHD8 0.11031509 0.65554127 0.2321887
-#> 5   ACER1 0.04307048 0.81238745 0.1048616
+                            family    = poisson(link = "log"),
+                            MAF.range = c(0, 0.05), verbose = FALSE)
+res_count$results
+#>      gene      p_AFR      p_EUR   p_cauchy
+#> 1    A1BG 0.93625150 0.01910404 0.05382056
+#> 2   ABCA7 0.44142308 0.62752028 0.53760581
+#> 3 ABHD17A 0.36705820 0.62199107 0.49354335
+#> 4   ABHD8 0.12410494 0.52148951 0.22338299
+#> 5   ACER1 0.02775486 0.92972375 0.08877860
 ```
 
-## 5  Adjusting for covariates
+## 6 Adjusting for covariates
 
-Covariates (age, sex, genotype PCs, batch, ...) are just additional terms
-in `formula`, as long as the matching columns exist in `pheno` — nothing
-else about the call changes. Here we add a simulated `age` and `sex` to
-the continuous-phenotype example from Section 3:
+Covariates are added to the formula, and the phenotype table must contain
+a column for each. Here we add a simulated age and sex to the continuous
+trait. Genotype principal components are added the same way, for example
+`y ~ age + sex + PC1 + PC2`.
 
 
 ``` r
 set.seed(2)
-age <- round(rnorm(length(common_ids), mean = 55, sd = 12))
-sex <- factor(sample(c("F", "M"), length(common_ids), replace = TRUE))
-pheno_cov <- data.frame(id = common_ids, y = rnorm(length(common_ids)),
-                         age = age, sex = sex)
+pheno_cov <- data.frame(id  = common_ids,
+                        y   = rnorm(length(common_ids)),
+                        age = round(rnorm(length(common_ids), mean = 55, sd = 12)),
+                        sex = factor(sample(c("F", "M"), length(common_ids), replace = TRUE)))
 
 res_cov <- ancestry_smmat(gds_paths, pheno_cov, y ~ age + sex, kinship, genes_small,
-                           family    = gaussian(link = "identity"),
-                           MAF.range = c(0, 0.05), verbose = FALSE)
-print(res_cov$results)
-#>      gene      p_AFR      p_EUR   p_cauchy
-#> 1    A1BG 0.78973635 0.63646754 0.72827528
-#> 2   ABCA7 0.61704448 0.70291389 0.66320132
-#> 3 ABHD17A 0.05755877 0.08958273 0.07014252
-#> 4   ABHD8 0.61776792 0.42714304 0.52459912
-#> 5   ACER1 0.10424888 0.90977046 0.57638538
+                          family    = gaussian(link = "identity"),
+                          MAF.range = c(0, 0.05), verbose = FALSE)
+res_cov$results
+#>      gene      p_AFR     p_EUR   p_cauchy
+#> 1    A1BG 0.15641519 0.9971322 0.99416662
+#> 2   ABCA7 0.52732801 0.9354582 0.87777687
+#> 3 ABHD17A 0.03468871 0.5286584 0.06923531
+#> 4   ABHD8 0.76451429 0.6051571 0.69848074
+#> 5   ACER1 0.09922975 0.1134745 0.10589289
 ```
 
-Genotype PCs from your own PCA (e.g. `PC1`, ..., `PC10`) work the same
-way: add them as columns to `pheno` and to `formula`
-(`y ~ age + sex + PC1 + PC2 + ...`).
+## 7 Testing every gene, with ancestry weights
 
-## 6  Where to get gene-group files for other species/builds
+A real analysis tests all genes. Passing `ancestry_counts` and
+`variant_info` from `ancestry_split()` weights each gene's Cauchy
+combination by how many participants of each ancestry carry its variants,
+so the African-ancestry test, with more data in this cohort, counts for
+more. This takes a few minutes.
 
-`ancestry_smmat()`'s `gene_group_file` (a data.frame or a path — both
-resolve to the same six columns, no header: `gene chrom pos ref alt
-weight`) is fundamentally **your own called variants intersected with
-gene boundaries** — it's specific to your VCF, not something you download
-ready-made for an arbitrary variant set. `genes_full`, used above, was
-built exactly this way: gene coordinates for chr19 intersected against
-the JHS variant positions.
 
-What you *can* download are the gene/exon coordinate annotations to
-intersect against your own variants (e.g. with `bedtools intersect` or a
-GTF-parsing script), for human or any other species:
+``` r
+res_full <- ancestry_smmat(gds_paths, pheno_cov, y ~ age + sex, kinship, genes_full,
+                           ancestry_counts = split_real$ancestry_counts,
+                           variant_info    = split_real$variant_info,
+                           MAF.range = c(0, 0.05), verbose = FALSE)
+nrow(res_full$results)
+#> [1] 1442
+head(res_full$results[order(res_full$results$p_cauchy), ])
+#>                gene        p_AFR      p_EUR w_AFR w_EUR     p_cauchy
+#> 541           JSRP1 8.323902e-05 0.98326189  2283   121 8.767381e-05
+#> 301 ENSG00000266953 1.060329e-03 0.29933312  2262   132 1.122045e-03
+#> 789          PDCD2L 1.294066e-03 0.29521556  2262   132 1.369337e-03
+#> 911            RDH8 2.275999e-03 0.10761493  2268   122 2.395803e-03
+#> 29              AMH 3.948893e-03 0.02433174  2283   121 4.122772e-03
+#> 393         FAM187B 4.087365e-03 0.24260357  2270   120 4.300353e-03
+```
 
-* [Ensembl BioMart](https://www.ensembl.org/biomart/martview) — gene/exon
-  coordinates for hundreds of species (GRCh37/GRCh38 human builds
-  included); the classic way to export a custom gene coordinate table.
-* [GENCODE](https://www.gencodegenes.org/) — comprehensive human and
-  mouse gene annotation (GTF/GFF3), the reference set most rare-variant
-  pipelines build their gene definitions from.
-* [UCSC Table Browser](https://genome.ucsc.edu/cgi-bin/hgTables) — RefSeq/
-  Ensembl/GENCODE gene tables for many species and genome builds, with a
-  web UI for filtering/exporting BED files directly.
-* [NCBI RefSeq](https://www.ncbi.nlm.nih.gov/refseq/) — the underlying
-  gene/transcript annotation source Ensembl/UCSC also redistribute.
-* [ANNOVAR](https://annovar.openbioinformatics.org/en/latest/) — if you
-  already annotate variants with ANNOVAR (`refGene`/`ensGene` databases),
-  its per-variant gene assignments can be reshaped directly into the
-  `gene_group_file` format.
+The trait is simulated without genetic effects, so the smallest of these
+p-values are what we expect by chance among 1,442 genes.
 
-Once you have gene boundaries in hand, build the file per chromosome: for
-each variant in your VCF, look up which gene's boundary it falls in
-(chromosome + position), write one row per (gene, variant) pair, and set
-`weight` (commonly `1` for an unweighted burden test, or a MAF-based
-weight — see `MAF.weights.beta` in `?ancestry_smmat`).
+## 8 Other SMMAT tests and the raw SMMAT output
 
-## 7  Other ways to adapt this to your own data
+By default SMMAT runs its efficient hybrid test (`tests = "E"`), and
+`ancestry_smmat()` combines its p-values (column `E.pval`). Any other
+`GMMAT::SMMAT()` argument can be passed through. For example, to combine
+the SKAT-O p-values instead, request the test with `tests` and name the
+p-value column with `p_col`:
 
-* **More than two populations**: nothing above changes structurally —
-  `gds_paths` just needs one named entry per population (see
-  `vignette("toy-vcf-msp-example")`, Part B, for building the underlying
-  `ancestry_split()`/`write_ancestry_gds()` inputs at K > 2).
-* **Full gene set / real analysis**: pass `genes_full` instead of the
-  5-gene subset as `gene_group_file`, and pass
-  `ancestry_counts = split_real$ancestry_counts` /
-  `variant_info = split_real$variant_info` (from Step 1) to
-  `ancestry_smmat()` to weight the Cauchy combination by each gene's local
-  ancestry proportions instead of equal weights.
-* **Every `GMMAT::SMMAT()` argument is available**: `MAF.range`,
-  `miss.cutoff`, `method`, and `ncores` are named parameters here with the
-  same meaning as in a direct `SMMAT()` call; anything else `SMMAT()`
-  accepts — `tests`, `rho`, `MAF.weights.beta`, `missing.method`,
-  `use.minor.allele`, `auto.flip`, `Garbage.Collection`,
-  `group.file.sep`, `meta.file.prefix` — forwards through `...` unchanged.
-  See `?ancestry_smmat` and `?GMMAT::SMMAT`.
-* **Raw per-population results**: every call above also returns
-  `$smmat_results`, a named list of the untouched `GMMAT::SMMAT()`
-  data.frames (e.g. `res_binary$smmat_results$AFR`) if you need columns
-  beyond the summarized `p_<POP>`/`p_cauchy` in `$results` — burden-only
-  p-values, variant counts, allele frequencies, etc.
+
+``` r
+res_o <- ancestry_smmat(gds_paths, pheno_cov, y ~ age + sex, kinship, genes_small,
+                        tests = "O", p_col = "O.pval",
+                        MAF.range = c(0, 0.05), verbose = FALSE)
+res_o$results
+#>      gene      p_AFR     p_EUR  p_cauchy
+#> 1    A1BG 0.10482040 1.0000000 1.0000000
+#> 2   ABCA7 0.55127668 0.8140770 0.7219490
+#> 3 ABHD17A 0.09469666 0.4024312 0.1622402
+#> 4   ABHD8 0.86583872 0.6980776 0.8102436
+#> 5   ACER1 0.31388522 0.1143865 0.1724220
+```
+
+The unsummarised output of each ancestry's SMMAT run is kept in
+`smmat_results`, for example the number of variants tested in each gene
+and the burden test statistics:
+
+
+``` r
+head(res_o$smmat_results$AFR)
+#>     group n.variants miss.min miss.mean miss.max     freq.min    freq.mean
+#> 1    A1BG         41        0         0        0 0.000000e+00 0.0004614505
+#> 2   ABCA7        205        0         0        0 0.000000e+00 0.0006208557
+#> 3 ABHD17A         18        0         0        0 0.000000e+00 0.0002688709
+#> 4   ABHD8         30        0         0        0 0.000000e+00 0.0004144215
+#> 5   ACER1         12        0         0        0 6.036825e-05 0.0005768488
+#>      freq.max    B.score     B.var     B.pval     S.pval     O.pval     O.minp
+#> 1 0.003760942  161.15499  70793.09 0.54472257 0.05548930 0.10482040 0.05548930
+#> 2 0.008212858  661.37964 484767.25 0.34215607 0.57782108 0.55127668 0.34215607
+#> 3 0.001266088 -228.15606  15523.39 0.06706888 0.08400736 0.09469666 0.05159878
+#> 4 0.002712375  -87.38494  45539.21 0.68217974 0.70218112 0.86583872 0.68217974
+#> 5 0.003697555 -185.41816  21148.99 0.20231204 0.38163155 0.31388522 0.20231204
+#>   O.minp.rho
+#> 1       0.00
+#> 2       1.00
+#> 3       0.25
+#> 4       1.00
+#> 5       1.00
+```
+
+## 9 More than two populations
+
+This cohort only has African and European local ancestry. With an MSP file
+that declares more populations, `ancestry_split()` returns one matrix per
+population and `write_ancestry_gds()` one GDS file per population, and
+`ancestry_smmat()` is called in the same way. For example, with RFMix
+output for African, European and Native American ancestry (the file names
+are placeholders):
+
+
+``` r
+split3 <- ancestry_split("cohort.vcf.gz", "cohort.msp.tsv", chrom = "chr19")
+gds3   <- write_ancestry_gds(split3, "gds")   # gds/AFR.gds, gds/EUR.gds, gds/NAT.gds
+res3   <- ancestry_smmat(gds3, pheno, y ~ age + sex, kinship, genes,
+                         ancestry_counts = split3$ancestry_counts,
+                         variant_info    = split3$variant_info)
+```
+
+`vignette("toy-vcf-msp-example")` builds a four-population example.
+
+## 10 Gene-group files for your own data
+
+A gene-group file is specific to your variants: it pairs each variant in
+your VCF with the gene whose boundaries contain it. The gene coordinates
+can be downloaded, for example from
+[Ensembl BioMart](https://www.ensembl.org/biomart/martview),
+[GENCODE](https://www.gencodegenes.org/) or the
+[UCSC Table Browser](https://genome.ucsc.edu/cgi-bin/hgTables), and
+intersected with your variant positions, for instance with
+`bedtools intersect` or in R. The file used above was made this way. A
+weight of 1 for every variant gives an unweighted test; SMMAT can also
+weight variants by allele frequency (see `MAF.weights.beta` in
+`?GMMAT::SMMAT`).

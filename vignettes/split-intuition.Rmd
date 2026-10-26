@@ -14,533 +14,355 @@ library(lantern)
 
 ## Overview
 
-LANTERN splits variant dosages by local ancestry using one of two methods:
+lantern splits each sample's alternate-allele dosage at a variant into
+one dosage per ancestral population. There are two ways to do this:
 
-| Mode | Input | Splitting rule |
-|------|-------|-------------|
-| **Unphased (dosage)** | Genotype matrix + per-variant ancestry code | Probabilistic (p1 … pK proportions estimated per variant) |
-| **Phased (haplotype)** | Per-haplotype GT + per-haplotype ancestry | Deterministic — no probability estimation |
+| Mode | Uses | How an allele is assigned |
+|------|------|---------------------------|
+| Phased (`"haplotype"`) | the allele and the ancestry of each haplotype | to the population of the haplotype that carries it |
+| Unphased (`"dosage"`) | the genotype (0/1/2) and the pair of ancestries at the site | shared by estimated proportions when the genotype is ambiguous |
 
-This vignette builds intuition for both methods using small, hand-built
-matrices — no VCF or MSP files involved. Part A covers the two-population
-case; Part B generalizes to K ≥ 3 populations (the same functions, just
-with K-population inputs).
-
-* For building the matrices from real VCF + MSP files, see
-  `vignette("toy-vcf-msp-example")`.
-* For the full split → GDS → association pipeline on real data, see
-  `vignette("real-data-chr19")`.
+This vignette explains both on small matrices, without any files, using
+the low-level functions that `ancestry_split()` calls internally. Part A
+covers two populations, Part B any number of populations, and Part C the
+shrinkage that `ancestry_split()` applies to unphased splits.
+`vignette("toy-vcf-msp-example")` shows the same splits starting from VCF
+and MSP files.
 
 ***
 
 # Part A: Two populations
 
-## A.1  Unphased (dosage) split — `split_diploid()`
+## A.1 Unphased split with `split_diploid()`
 
-`split_diploid()` takes two matrices of identical dimensions:
+Without phase we only know, for each sample at a variant, its genotype (0,
+1 or 2 alternate alleles) and its pair of ancestries, coded as
 
-* **`gt_genotype`** — integer matrix, rows = variants, cols = samples.
-  Values: 0 (hom-ref), 1 (het), 2 (hom-alt).
-* **`ancestry`** — integer matrix, same shape.
-  Ancestry codes: **1** = EUR/EUR, **2** = AFR/EUR (mixed het), **3** = AFR/AFR.
+* 1 = EUR/EUR (both haplotypes European),
+* 2 = AFR/EUR (one of each),
+* 3 = AFR/AFR.
 
-The ancestry code summarises *both* haplotypes at the locus (e.g. from an
-RFMix MSP file collapsed into a per-variant diploid code).
+For most samples the split is obvious. An AFR/AFR sample's alleles are all
+African, and an AFR/EUR sample with genotype 2 has one allele on each
+haplotype, so one African and one European. The only ambiguous case is an
+AFR/EUR heterozygote: it has one alternate allele, and we cannot tell
+which haplotype carries it.
 
-```{r unphased-basic}
-set.seed(42)
-n_var  <- 10   # variants
-n_samp <- 6    # samples
+Consider a single variant in six samples:
 
-# Simulate integer genotypes (0/1/2)
-gt <- matrix(
-  sample(0:2, n_var * n_samp, replace = TRUE, prob = c(0.6, 0.3, 0.1)),
-  nrow = n_var, ncol = n_samp
-)
-rownames(gt) <- paste0("var", seq_len(n_var))
-colnames(gt) <- paste0("S", seq_len(n_samp))
-
-# Simulate ancestry codes (1=EUR, 2=MIX, 3=AFR)
-anc <- matrix(
-  sample(1:3, n_var * n_samp, replace = TRUE, prob = c(0.4, 0.2, 0.4)),
-  nrow = n_var, ncol = n_samp
-)
-
-result <- split_diploid(gt, anc)
-
-cat("African dosage (first 4 variants × 6 samples):\n")
-round(result$african[1:4, ], 2)
-
-cat("\nEuropean dosage (first 4 variants × 6 samples):\n")
-round(result$european[1:4, ], 2)
+```{r a1-data}
+gt  <- matrix(c(1, 2, 1, 1, 0, 2), nrow = 1,
+              dimnames = list("var1", paste0("S", 1:6)))
+anc <- matrix(c(3, 3, 1, 2, 2, 2), nrow = 1,
+              dimnames = list("var1", paste0("S", 1:6)))
+rbind(genotype = gt[1, ], ancestry = anc[1, ])
 ```
 
-For each variant the function computes ancestry-specific proportions
-**p1** (African) and **p2** (European) from the diploid counts across all
-samples:
+S1 and S2 are AFR/AFR carriers, S3 is a EUR/EUR carrier, S6 is an AFR/EUR
+homozygote and S4 is the one ambiguous AFR/EUR heterozygote. To split S4's
+allele we estimate how this variant's alternate alleles divide between
+African and European haplotypes, using only the unambiguous carriers.
+Writing \(N\) for the number of samples of a given ancestry and genotype,
 
-```
-p1 = (2·N_AA_hom + N_AA_het + N_MIX_hom) / denominator
-p2 = (N_MIX_hom + 2·N_EUR_hom + N_EUR_het) / denominator
-```
+\[
+p_\text{AFR} = \frac{2N_\text{AFR/AFR, 2} + N_\text{AFR/AFR, 1} + N_\text{AFR/EUR, 2}}{D},
+\qquad
+p_\text{EUR} = \frac{N_\text{AFR/EUR, 2} + 2N_\text{EUR/EUR, 2} + N_\text{EUR/EUR, 1}}{D},
+\]
 
-where `denominator = total_alt_alleles − N_MIX_het` (mixed-het samples
-are assigned stochastically via p1/p2 rather than excluded from the
-denominator).
+where \(D\) is the number of unambiguous alternate alleles, that is, all
+alternate alleles at the variant minus those of the ambiguous
+heterozygotes:
 
-**Ambiguous-dominated edge-case**: when *all* alt alleles are carried by
-mixed-het individuals (the extreme case), `split_diploid()` alone (no `gla`
-argument, its default) falls back to p1 = p2 = 0.5 to avoid dividing by zero.
-But the more general problem isn't just this all-ambiguous extreme — it's
-any variant where mixed-het carriers *dominate* the observations, even with
-one or two unambiguous carriers still present to compute a (misleadingly
-confident) ratio from. **Part C below explains why that's worth improving
-on, and how**; `ancestry_split()` applies that improvement (GLA shrinkage)
-automatically.
+\[
+D = 2N_\text{AFR/AFR, 2} + N_\text{AFR/AFR, 1} + 2N_\text{AFR/EUR, 2}
+  + 2N_\text{EUR/EUR, 2} + N_\text{EUR/EUR, 1}.
+\]
 
-```{r unphased-edge}
-# A variant where only mixed-het (code 2) samples carry the alt allele
-gt_edge  <- matrix(c(1L, 0L, 1L), nrow = 1)   # three samples: het, ref, het
-anc_edge <- matrix(c(2L, 1L, 2L), nrow = 1)   # all alt carriers are MIX
+An AFR/EUR homozygote contributes one allele to each population. The
+ambiguous heterozygote then gets \(p_\text{AFR}\) of its allele as African
+dosage and \(p_\text{EUR}\) as European dosage. For our variant:
 
-r <- split_diploid(gt_edge, anc_edge)
-cat("Singleton MIX case — p1 = p2 = 0.5\n")
-cat("African: ", r$african, "\nEuropean:", r$european, "\n")
-```
-
-For matrices with mismatched samples or variant sets,
-`ancestry_split_dosage()` wraps `split_diploid()` with automatic overlap
-handling and monomorphic filtering — see `?ancestry_split_dosage`.
-
-## A.2  Phased (haplotype) split — `split_haplotype()`
-
-When RFMix (or equivalent) provides **per-haplotype** local ancestry
-calls, LANTERN can deterministically assign each haplotype's allele to the
-correct ancestry background. Inputs are four matrices of the same shape
-(variants × samples):
-
-| Argument | Description |
-|----------|-------------|
-| `gt_hap0` | integer 0/1 allele for haplotype 0 |
-| `gt_hap1` | integer 0/1 allele for haplotype 1 |
-| `anc_hap0` | ancestry code for haplotype 0 |
-| `anc_hap1` | ancestry code for haplotype 1 |
-| `pop_codes` | named vector mapping `c(AFR=0L, EUR=1L)` (RFMix default) |
-
-```{r phased-basic}
-# 3 variants × 4 samples
-gt0 <- matrix(c(1L, 0L, 1L,   # variant 1: hap0 alleles for 3 samples
-                0L, 1L, 0L,   # variant 2
-                1L, 1L, 0L),  # variant 3
-              nrow = 3, ncol = 3)
-
-gt1 <- matrix(c(0L, 1L, 0L,
-                1L, 0L, 1L,
-                0L, 1L, 1L),
-              nrow = 3, ncol = 3)
-
-# Haplotype ancestry: 0 = AFR, 1 = EUR  (RFMix convention)
-a0 <- matrix(c(0L, 0L, 1L,
-               1L, 0L, 0L,
-               0L, 1L, 0L),
-             nrow = 3, ncol = 3)
-
-a1 <- matrix(c(1L, 1L, 0L,
-               0L, 1L, 1L,
-               1L, 0L, 1L),
-             nrow = 3, ncol = 3)
-
-phased_result <- split_haplotype(gt0, gt1, a0, a1)
-
-cat("African dosage (phased):\n"); print(phased_result$african)
-cat("European dosage (phased):\n"); print(phased_result$european)
+```{r a1-by-hand}
+n <- function(a, g) sum(anc == a & gt == g)
+D <- 2 * n(3, 2) + n(3, 1) + 2 * n(2, 2) + 2 * n(1, 2) + n(1, 1)
+p_afr <- (2 * n(3, 2) + n(3, 1) + n(2, 2)) / D
+p_eur <- (n(2, 2) + 2 * n(1, 2) + n(1, 1)) / D
+c(D = D, p_AFR = p_afr, p_EUR = p_eur)
 ```
 
-The rule is simple: for each cell, hap0 contributes its allele to the AFR
-count if `anc_hap0 == 0`, to EUR if `anc_hap0 == 1`, and nothing
-otherwise.  Same for hap1 — no probability estimation, just bookkeeping.
+`split_diploid()` returns the two dosage matrices. S4's allele is split
+2/3 African and 1/3 European, and every other sample's split is whole:
+
+```{r a1-split}
+res <- split_diploid(gt, anc)
+split_table <- rbind(AFR = res$african[1, ], EUR = res$european[1, ])
+colnames(split_table) <- colnames(gt)
+split_table
+```
+
+If every carrier of a variant is an ambiguous heterozygote, \(D = 0\) and
+the proportions cannot be estimated. `split_diploid()` then splits each
+allele 1/2 and 1/2:
+
+```{r a1-edge}
+gt_edge  <- matrix(c(1, 0, 1), nrow = 1)
+anc_edge <- matrix(c(2, 1, 2), nrow = 1)
+split_diploid(gt_edge, anc_edge)
+```
+
+Part C shows that estimates from very few unambiguous carriers are also
+unreliable, and how `ancestry_split()` handles that.
+
+## A.2 Phased split with `split_haplotype()`
+
+With phased genotypes and local ancestry for each haplotype, nothing needs
+to be estimated: each haplotype's allele goes to that haplotype's
+population. `split_haplotype()` takes four matrices of the same shape
+(variants x samples): the alleles (0/1) on haplotype 0 and on haplotype 1,
+and the ancestry of each haplotype, with RFMix's codes 0 = AFR and
+1 = EUR.
+
+```{r a2-data}
+ids <- list(paste0("var", 1:3), paste0("S", 1:3))
+gt0 <- matrix(c(1, 0, 1,  0, 1, 0,  1, 1, 0), nrow = 3, dimnames = ids)
+gt1 <- matrix(c(0, 1, 0,  1, 0, 1,  0, 1, 1), nrow = 3, dimnames = ids)
+a0  <- matrix(c(0, 0, 1,  1, 0, 0,  0, 1, 0), nrow = 3, dimnames = ids)
+a1  <- matrix(c(1, 1, 0,  0, 1, 1,  1, 0, 1), nrow = 3, dimnames = ids)
+```
+
+Take S1 at `var1`: haplotype 0 carries the allele (`gt0` is 1) and is
+African (`a0` is 0), and haplotype 1 does not carry it. So S1 has an
+African dosage of 1 and a European dosage of 0 at `var1`.
+
+```{r a2-split}
+phased <- split_haplotype(gt0, gt1, a0, a1)
+phased$african
+phased$european
+```
+
+The two dosages always add up to the genotype, `gt0 + gt1`:
+
+```{r a2-total}
+all.equal(phased$african + phased$european, unname(gt0 + gt1))
+```
 
 ***
 
 # Part B: More than two populations
 
-`split_diploid_multi()` and `split_haplotype_multi()` generalize Part A's
-functions to K ≥ 2 populations. K = 2 is numerically identical to
-`split_diploid()`/`split_haplotype()` — see `?split_diploid_multi` for a
-worked equivalence check.
+`split_diploid_multi()` and `split_haplotype_multi()` do the same for any
+number of populations K. With two populations they give the same results
+as the functions in Part A.
 
-## B.1  Unphased (dosage) split — `split_diploid_multi()`
+## B.1 Unphased split with `split_diploid_multi()`
 
-The diploid ancestry code for K populations encodes which combination of
-two parental backgrounds is present.  You supply two objects:
+With K populations a sample's pair of ancestries is either pure (both
+haplotypes from the same population) or mixed (from two different
+populations). There are K pure and K(K-1)/2 mixed combinations:
 
-* **`pure_codes`** — named integer vector, one entry per population:
-  ```r
-  c(AFR = 3L, EUR = 1L, NAT = 4L)
-  ```
-* **`mixed_codes`** — data frame with columns `code`, `pop1`, `pop2`.
-  One row per mixed-ancestry diploid type:
-  ```r
-  data.frame(
-    code = c(2L, 5L, 6L),
-    pop1 = c("AFR", "AFR", "EUR"),
-    pop2 = c("EUR", "NAT", "NAT")
-  )
-  ```
-
-For K populations there are K(K−1)/2 mixed-pair types:
-
-| K | Pure types | Mixed pairs | Total codes |
-|---|-----------|-------------|-------------|
+| K | Pure | Mixed | Total codes |
+|---|------|-------|-------------|
 | 2 | 2 | 1 | 3 |
 | 3 | 3 | 3 | 6 |
 | 4 | 4 | 6 | 10 |
-| 5 | 5 | 10 | 15 |
 
-```{r setup-3pop}
+You choose a code for each combination and pass two descriptions to the
+function: `pure_codes`, the code of each pure combination, and
+`mixed_codes`, a table with the code and the two populations of each
+mixed combination. For three populations (African, European and Native
+American):
+
+```{r b1-codes}
+pure_codes  <- c(AFR = 3L, EUR = 1L, NAT = 4L)
+mixed_codes <- data.frame(code = c(2L, 5L, 6L),
+                          pop1 = c("AFR", "AFR", "EUR"),
+                          pop2 = c("EUR", "NAT", "NAT"))
+mixed_codes
+```
+
+We simulate 12 rare variants in 30 samples from a three-way admixed
+group:
+
+```{r b1-data}
 set.seed(2025)
-N_VAR  <- 12   # variants
-N_SAMP <- 30   # samples
-
-# Ancestry code system
-#   Pure:  AFR=3, EUR=1, NAT=4
-#   Mixed: AFR/EUR=2, AFR/NAT=5, EUR/NAT=6
-pure_codes <- c(AFR = 3L, EUR = 1L, NAT = 4L)
-mixed_codes <- data.frame(
-  code = c(2L,    5L,    6L   ),
-  pop1 = c("AFR", "AFR", "EUR"),
-  pop2 = c("EUR", "NAT", "NAT")
-)
-
-# Simulate rare-variant genotype matrix (mostly 0, rare 1/2)
-gt3 <- matrix(
-  sample(0:2, N_VAR * N_SAMP, replace = TRUE, prob = c(0.88, 0.10, 0.02)),
-  nrow = N_VAR, ncol = N_SAMP
-)
-rownames(gt3) <- paste0("chr19:", seq(1e6, by = 500L, length.out = N_VAR))
-colnames(gt3) <- paste0("S", sprintf("%02d", seq_len(N_SAMP)))
-
-# Simulate ancestry codes reflecting a tri-admixed cohort
-#   Roughly: 30% AFR, 20% EUR, 10% NAT, 20% AFR/EUR, 10% AFR/NAT, 10% EUR/NAT
-all_codes <- c(pure_codes, mixed_codes$code)
-code_probs <- c(0.30, 0.20, 0.10, 0.20, 0.10, 0.10)
-anc3 <- matrix(
-  sample(all_codes, N_VAR * N_SAMP, replace = TRUE, prob = code_probs),
-  nrow = N_VAR, ncol = N_SAMP
-)
-
+gt3 <- matrix(sample(0:2, 12 * 30, replace = TRUE, prob = c(0.88, 0.10, 0.02)),
+              nrow = 12, ncol = 30)
+anc3 <- matrix(sample(c(pure_codes, mixed_codes$code), 12 * 30, replace = TRUE,
+                      prob = c(0.30, 0.20, 0.10, 0.20, 0.10, 0.10)),
+               nrow = 12, ncol = 30)
 out <- split_diploid_multi(gt3, anc3, pure_codes, mixed_codes)
-
-cat("Output list names:", names(out), "\n")
-cat("Dimensions (each matrix):", nrow(out$AFR), "variants x",
-    ncol(out$AFR), "samples\n\n")
-
-cat("AFR dosage (first 4 variants, 6 samples):\n")
-round(out$AFR[1:4, 1:6], 3)
-
-cat("EUR dosage (first 4 variants, 6 samples):\n")
-round(out$EUR[1:4, 1:6], 3)
-
-# Conservation check: per-element sum across pools never exceeds raw gt
-total <- out$AFR + out$EUR + out$NAT
-excess <- max(total - gt3)
-cat("\nMax excess of pooled dosage over raw gt:", excess,
-    "(must be <= 0)\n")
+names(out)
 ```
 
-**How p1, p2, p3 are estimated.** For each variant, the function estimates
-population allele proportions from **unambiguous observations** only
-(pure-ancestry samples of any genotype, plus mixed hom-alts which each
-contribute one alt allele to each parent pool).  Ambiguous mixed-ancestry
-heterozygotes are excluded from the estimation and then split using the
-result.
+The estimate works as in A.1, with one proportion per population. Pure
+carriers count for their population and mixed homozygotes contribute one
+allele to each of their two populations. With \(N_{k,g}\) the number of
+pure population-\(k\) samples with genotype \(g\), and \(N_{\{k,j\},2}\)
+the number of mixed \(k\)/\(j\) homozygotes,
 
-$$D = \sum_{k} \bigl(2N_{kk}^{(2)} + N_{kk}^{(1)}\bigr) + 2\sum_{i<j} N_{ij}^{(2)}$$
+\[
+p_k = \frac{2N_{k,2} + N_{k,1} + \sum_{j \ne k} N_{\{k,j\},2}}{D},
+\qquad
+D = \sum_k \left(2N_{k,2} + N_{k,1}\right) + 2\sum_{k<j} N_{\{k,j\},2},
+\]
 
-$$p_k = \frac{2N_{kk}^{(2)} + N_{kk}^{(1)} + \sum_{j \neq k} N_{\langle kj \rangle}^{(2)}}{D}, \quad \sum_k p_k = 1$$
+so the \(p_k\) add up to 1. An ambiguous heterozygote with ancestries
+\(i\) and \(j\) then gets \(p_i / (p_i + p_j)\) of its allele in
+population \(i\) and \(p_j / (p_i + p_j)\) in population \(j\).
 
-A mixed-ancestry heterozygote in pair (i, j) then receives:
-$p_i/(p_i+p_j)$ of its dosage in pool i and $p_j/(p_i+p_j)$ in pool j.
+To check this, we take the first variant with an ambiguous AFR/EUR
+heterozygote and compute the proportions by hand:
 
-```{r proportions-demo}
-# Trace p_k for a single variant by hand
-var_idx <- 3   # pick variant 3
-
-gt_v   <- gt3[var_idx, ]
-anc_v  <- anc3[var_idx, ]
-
-# Pure AFR (code 3)
-N_AA2 <- sum(anc_v == 3 & gt_v == 2)
-N_AA1 <- sum(anc_v == 3 & gt_v == 1)
-# Pure EUR (code 1)
-N_EE2 <- sum(anc_v == 1 & gt_v == 2)
-N_EE1 <- sum(anc_v == 1 & gt_v == 1)
-# Pure NAT (code 4)
-N_NN2 <- sum(anc_v == 4 & gt_v == 2)
-N_NN1 <- sum(anc_v == 4 & gt_v == 1)
-# Mixed hom-alts
-N_AE2 <- sum(anc_v == 2 & gt_v == 2)
-N_AN2 <- sum(anc_v == 5 & gt_v == 2)
-N_EN2 <- sum(anc_v == 6 & gt_v == 2)
-
-D  <- 2*N_AA2 + N_AA1 + 2*N_EE2 + N_EE1 + 2*N_NN2 + N_NN1 +
-      2*N_AE2 + 2*N_AN2 + 2*N_EN2
-p1 <- if (D > 0) (2*N_AA2 + N_AA1 + N_AE2 + N_AN2) / D else 0.5
-p2 <- if (D > 0) (2*N_EE2 + N_EE1 + N_AE2 + N_EN2) / D else 0.5
-p3 <- if (D > 0) (2*N_NN2 + N_NN1 + N_AN2 + N_EN2) / D else 0.5
-
-cat(sprintf("Variant %d  D=%d  p_AFR=%.3f  p_EUR=%.3f  p_NAT=%.3f\n",
-            var_idx, as.integer(D), p1, p2, p3))
-cat("p1+p2+p3 =", p1 + p2 + p3, "\n")
+```{r b1-by-hand}
+v <- which(rowSums(anc3 == 2 & gt3 == 1) > 0)[1]
+g <- gt3[v, ]
+a <- anc3[v, ]
+n <- function(code, genotype) sum(a == code & g == genotype)
+num <- c(AFR = 2 * n(3, 2) + n(3, 1) + n(2, 2) + n(5, 2),
+         EUR = 2 * n(1, 2) + n(1, 1) + n(2, 2) + n(6, 2),
+         NAT = 2 * n(4, 2) + n(4, 1) + n(5, 2) + n(6, 2))
+p <- num / sum(num)   # sum(num) equals D
+p
 ```
 
-**Ambiguous-dominated edge case.** When the denominator D = 0 for a given
-variant (all alt alleles are carried exclusively by mixed-ancestry
-heterozygotes, with no pure-ancestry or mixed hom-alt alt alleles),
-`split_diploid_multi()` alone (no `gla` argument, its default) falls back to
-a 50/50 split within each affected pair. That's the extreme case, but the
-same unreliability shows up whenever mixed-het carriers dominate the count
-even with D > 0 — Part C revisits both.
+The heterozygote's African share should be \(p_\text{AFR} / (p_\text{AFR}
++ p_\text{EUR})\), which matches the function's output:
 
-```{r singleton}
-# One sample, one variant: AFR/EUR mixed het, no other data
-gt_s  <- matrix(1L, nrow = 1, ncol = 1)
-anc_s <- matrix(2L, nrow = 1, ncol = 1)   # code 2 = AFR/EUR
-r_s   <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes)
-cat("Singleton AFR/EUR het -> AFR:", r_s$AFR[1,1],
-    " EUR:", r_s$EUR[1,1],
-    " NAT:", r_s$NAT[1,1], "\n")
+```{r b1-check}
+s <- which(a == 2 & g == 1)[1]
+c(by_hand  = unname(p["AFR"] / (p["AFR"] + p["EUR"])),
+  lantern  = out$AFR[v, s])
 ```
 
-## B.2  Phased (haplotype) split — `split_haplotype_multi()`
+## B.2 Phased split with `split_haplotype_multi()`
 
-When per-haplotype ancestry calls are available (e.g. from RFMix), the
-split is **deterministic**: each haplotype's allele goes directly to its
-population pool.  No probability estimation is needed. `split_haplotype_multi()`
-takes a single named integer vector `pop_codes` of length K, matching the
-codes used in the MSP file (RFMix default: 0-based integers).
+The phased split needs only the code of each population, as used in the
+MSP file (RFMix numbers populations from 0):
 
-```{r phased-3pop}
-pop_codes_phased <- c(AFR = 0L, EUR = 1L, NAT = 2L)
-
+```{r b2-split}
 set.seed(2025)
-N_VAR2  <- 8
-N_SAMP2 <- 6
+hap0 <- matrix(rbinom(8 * 6, 1, 0.1), nrow = 8)
+hap1 <- matrix(rbinom(8 * 6, 1, 0.1), nrow = 8)
+anc0 <- matrix(sample(0:2, 8 * 6, replace = TRUE, prob = c(0.4, 0.4, 0.2)), nrow = 8)
+anc1 <- matrix(sample(0:2, 8 * 6, replace = TRUE, prob = c(0.4, 0.4, 0.2)), nrow = 8)
 
-# Per-haplotype allele matrices (0/1)
-gt_hap0 <- matrix(
-  sample(0:1, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.9, 0.1)),
-  nrow = N_VAR2, ncol = N_SAMP2
-)
-gt_hap1 <- matrix(
-  sample(0:1, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.9, 0.1)),
-  nrow = N_VAR2, ncol = N_SAMP2
-)
-
-# Per-haplotype ancestry codes (0=AFR, 1=EUR, 2=NAT)
-anc_hap0 <- matrix(
-  sample(0:2, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.4, 0.4, 0.2)),
-  nrow = N_VAR2, ncol = N_SAMP2
-)
-anc_hap1 <- matrix(
-  sample(0:2, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.4, 0.4, 0.2)),
-  nrow = N_VAR2, ncol = N_SAMP2
-)
-
-phased_out <- split_haplotype_multi(gt_hap0, gt_hap1,
-                                  anc_hap0, anc_hap1,
-                                  pop_codes_phased)
-
-cat("Output names:", names(phased_out), "\n")
-cat("AFR dosage (first 4 variants):\n")
-print(phased_out$AFR[1:4, ])
-
-# Exact reconstruction: AFR + EUR + NAT == hap0 + hap1 everywhere
-raw_diploid <- gt_hap0 + gt_hap1
-recon_error <- max(abs((phased_out$AFR + phased_out$EUR + phased_out$NAT) -
-                         raw_diploid))
-cat("Max reconstruction error:", recon_error, "(must be 0)\n")
+phased3 <- split_haplotype_multi(hap0, hap1, anc0, anc1,
+                                 pop_codes = c(AFR = 0L, EUR = 1L, NAT = 2L))
+phased3$AFR[1:4, ]
 ```
 
-The phased function is exact because every haplotype allele goes to
-exactly one pool; there is no probabilistic component.
+Each allele goes to exactly one population, so the three dosages add up
+to the genotype:
 
-`split_haplotype_multi()` with K = 2 is numerically identical to
+```{r b2-total}
+all.equal(phased3$AFR + phased3$EUR + phased3$NAT, hap0 + hap1)
+```
+
+With two populations, `split_haplotype_multi()` gives the same result as
 `split_haplotype()`:
 
-```{r phased-2pop-equiv}
-pop2 <- c(AFR = 0L, EUR = 1L)
-gt0b <- matrix(c(1L,0L,1L,0L), 2, 2)
-gt1b <- matrix(c(0L,1L,0L,1L), 2, 2)
-a0b  <- matrix(c(0L,1L,0L,1L), 2, 2)
-a1b  <- matrix(c(1L,0L,1L,0L), 2, 2)
-
-m2 <- split_haplotype_multi(gt0b, gt1b, a0b, a1b, pop2)
-p2 <- split_haplotype(gt0b, gt1b, a0b, a1b, pop2)
-
-cat("AFR identical:", identical(unname(m2$AFR), p2$african), "\n")
-cat("EUR identical:", identical(unname(m2$EUR), p2$european), "\n")
+```{r b2-equivalent}
+m2 <- split_haplotype_multi(gt0, gt1, a0, a1, pop_codes = c(AFR = 0L, EUR = 1L))
+all.equal(unname(m2$AFR), phased$african)
 ```
 
-## B.3  Four- and five-population extension
+## B.3 Four or more populations
 
-The same interface extends directly to four or five populations by
-adding entries to `pure_codes` and rows to `mixed_codes`. There are
-K(K−1)/2 mixed-pair codes for K populations — 6 for K = 4, 10 for K = 5 —
-and `mixed_codes` must list all of them.
+More populations only means more entries in `pure_codes` and more rows in
+`mixed_codes`, one for every pair of populations. For four populations:
 
-```{r four-pop}
-# Four populations: AFR, EUR, NAT, EAS
+```{r b3-four}
 pure_4  <- c(AFR = 3L, EUR = 1L, NAT = 4L, EAS = 5L)
-mixed_4 <- data.frame(
-  code = c(2L, 6L, 7L, 8L, 9L, 10L),
-  pop1 = c("AFR","AFR","AFR","EUR","EUR","NAT"),
-  pop2 = c("EUR","NAT","EAS","NAT","EAS","EAS")
-)
+mixed_4 <- data.frame(code = c(2L, 6L, 7L, 8L, 9L, 10L),
+                      pop1 = c("AFR", "AFR", "AFR", "EUR", "EUR", "NAT"),
+                      pop2 = c("EUR", "NAT", "EAS", "NAT", "EAS", "EAS"))
 
 set.seed(11)
-n_var4 <- 6; n_samp4 <- 16
-gt4  <- matrix(sample(0:2, n_var4 * n_samp4, replace = TRUE,
-                       prob = c(0.85, 0.12, 0.03)),
-                nrow = n_var4, ncol = n_samp4)
-anc4 <- matrix(sample(c(pure_4, mixed_4$code), n_var4 * n_samp4, replace = TRUE),
-                nrow = n_var4, ncol = n_samp4)
-
+gt4  <- matrix(sample(0:2, 6 * 16, replace = TRUE, prob = c(0.85, 0.12, 0.03)),
+               nrow = 6)
+anc4 <- matrix(sample(c(pure_4, mixed_4$code), 6 * 16, replace = TRUE), nrow = 6)
 out4 <- split_diploid_multi(gt4, anc4, pure_4, mixed_4)
-cat("Populations:", paste(names(out4), collapse = ", "), "\n")
-
-# Conservation check: pooled dosage never exceeds the raw genotype
-total4 <- Reduce("+", out4)
-cat("Max excess of pooled dosage over raw gt:", max(total4 - gt4), "(must be <= 0)\n")
-
-# Five populations: AFR, EUR, NAT, EAS, SAS — 10 mixed-pair codes
-mixed_5 <- data.frame(
-  code = 7:16,
-  pop1 = c("AFR","AFR","AFR","AFR","EUR","EUR","EUR","NAT","NAT","EAS"),
-  pop2 = c("EUR","NAT","EAS","SAS","NAT","EAS","SAS","EAS","SAS","SAS")
-)
-cat("K=5 mixed_codes has", nrow(mixed_5), "rows (expected 5*4/2 =", 5 * 4 / 2, ")\n")
+names(out4)
 ```
 
 ***
 
-# Part C: GLA shrinkage — when ambiguous carriers dominate
+# Part C: Shrinkage toward 1/2
 
-Parts A and B each flagged an edge case and deferred it here: the pure
-singleton (D = 0, every alt allele carried by mixed-ancestry heterozygotes)
-is only the extreme end of a broader problem — the raw formula gets
-unreliable well before D actually hits zero, any time ambiguous mixed-het
-carriers *dominate* the count. Take 10 AFR/EUR mixed-het carriers (code 2)
-and just **one** pure-EUR hom-alt carrier (code 1) at the same variant —
-nothing else:
+The proportions in A.1 and B.1 are estimated from the unambiguous carriers
+of each variant. Rare variants have few carriers, and an estimate from one
+or two of them can be far from the truth. Consider a variant carried by ten
+ambiguous AFR/EUR heterozygotes and a single EUR/EUR homozygote:
 
-```{r ambiguous-dominant-raw}
-gt_dom  <- matrix(c(rep(1L, 10), 2L), nrow = 1)   # 10 mixed hets + 1 pure EUR hom-alt
-anc_dom <- matrix(c(rep(2L, 10), 1L), nrow = 1)   # code 2 = AFR/EUR, code 1 = EUR
-
-r_raw <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes)  # gla=NULL (default)
-cat("Raw split -> AFR total:", sum(r_raw$AFR),
-    " EUR total:", sum(r_raw$EUR), " NAT total:", sum(r_raw$NAT), "\n")
+```{r c-data}
+gt_dom  <- matrix(c(rep(1L, 10), 2L), nrow = 1)
+anc_dom <- matrix(c(rep(2L, 10), 1L), nrow = 1)
+raw <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes)
+c(AFR = sum(raw$AFR), EUR = sum(raw$EUR), NAT = sum(raw$NAT))
 ```
 
-D > 0 here, so this isn't the singleton branch — the raw formula happily
-computes p_AFR = 0, p_EUR = 1 from that one unambiguous carrier, and
-confidently assigns **all ten** ambiguous carriers' alt alleles to EUR. That's
-not a "no answer, guess 50/50" problem; it's a *confidently wrong-looking*
-answer extrapolated from a single data point. Nothing in the raw formula
-distinguishes "1 unambiguous carrier informing 2 total alt alleles" from "1
-unambiguous carrier informing 100" — it takes whatever ratio it computes at
-face value, regardless of how little evidence backs it.
+The only unambiguous carrier is European, so the estimate is
+\(p_\text{EUR} = 1\), and all ten ambiguous alleles are assigned to
+European haplotypes on the strength of one sample.
 
-**GLA (global local ancestry) shrinkage** fixes both this case and the pure
-singleton with one mechanism: discount the raw *pairwise* ratio in
-proportion to how much of a variant's evidence is actually ambiguous **for
-that specific pair**, and fill in the rest from the chromosome arm's
-independently-estimated ancestry mixture, renormalised to just the two
-populations in the pair. For the mixed pair `(i,j)` behind a given ambiguous
-het (here, AFR/EUR):
+`ancestry_split()` therefore pulls the estimated share toward 1/2. How
+far depends on \(w\), the fraction of the variant's alternate alleles
+that are ambiguous (homozygotes count twice, as they carry two alleles).
+For an ambiguous heterozygote with ancestries \(i\) and \(j\),
 
-$$w_{ij} = \frac{\text{pair } (i,j)\text{'s ambiguous-het count}}{\text{all alt-carriers at this variant, any category}}, \qquad
-\frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij}) \frac{p_i^{\text{raw}}}{p_i^{\text{raw}}+p_j^{\text{raw}}} + w_{ij} \cdot \frac{\text{GLA}_i[\text{arm}]}{\text{GLA}_i[\text{arm}]+\text{GLA}_j[\text{arm}]}$$
+\[
+\text{share}_i = (1 - w)\,\frac{p_i}{p_i + p_j} + w \cdot \frac{1}{2}.
+\]
 
-Blending against the pair-renormalised GLA ratio — rather than each
-population's raw `GLA_k[arm]` directly — matters once K > 2: it guarantees an
-ambiguous AFR/EUR het never receives any dosage toward a third population
-like NAT, however strongly shrinkage applies. The example below confirms
-this: `NAT total` stays exactly 0 even though `GLA_NAT[arm] = 0.05 > 0` — a
-formula that blended each `p_k` toward its raw `GLA_k[arm]` directly (instead
-of the pair-renormalised ratio above) would incorrectly leak some dosage to
-NAT here. For K = 2, where `GLA_AFR[arm] + GLA_EUR[arm] = 1` by construction,
-the pair-renormalised target collapses to plain `GLA_AFR[arm]` and this
-formula reduces to the simpler two-population case from Part A.
+When most of the evidence is unambiguous, \(w\) is close to 0 and the
+estimate from A.1 or B.1 is used almost unchanged. When there is no
+unambiguous evidence, \(w = 1\) and the allele is split exactly 1/2 and
+1/2, the same as the fallback in A.1. The shares stay within the pair, so
+an AFR/EUR heterozygote never gets Native American dosage.
 
-`w_ij = 0` (pair `(i,j)`'s own unambiguous carriers dominate) reduces to
-exactly the raw pairwise ratio from Parts A/B. `w_ij = 1` (the pure singleton
-for that pair) falls back entirely to the pair's GLA-conditioned ratio — not
-a coin flip; that's just one end of this continuum, not a separate
-mechanism. `GLA_k[arm]` itself is computed once per chromosome arm (split at
-the centromere) directly from the MSP ancestry **tracts**, not from
-genotypes or phase, so it stays well-estimated regardless of how rare any
-individual variant is.
+The target is 1/2 because an AFR/EUR heterozygote has exactly one African
+and one European haplotype at the site. Which of the two carries the
+allele depends on how common the allele is on African versus European
+haplotypes, not on how much African ancestry the cohort has overall. An
+earlier version of lantern shrank toward the cohort's average ancestry
+(about 0.82 African on chromosome 19 in our data). In simulations based on
+that data, ambiguous alleles were in fact on the African haplotype half of
+the time, and shrinking toward 1/2 assigned them more accurately.
 
-`split_diploid()`/`split_diploid_multi()` accept this as an optional `gla`
-(proportions) + `arm_id` (which row of `gla` each variant uses) argument
-pair; leaving them at their default `NULL` reproduces Parts A/B exactly, as
-seen above. Revisiting the example above with a `gla` argument supplied —
-say, this arm's cohort is mostly AFR/EUR admixed with little NAT ancestry:
+The low-level functions take the target through their `gla` argument (one
+row of target proportions) and `arm_id` (which row each variant uses). A
+target of 1/K for each of K populations gives 1/2 for every pair, which is
+what `ancestry_split()` uses:
 
-```{r gla-ambiguous-dominant}
-# This arm's actual ancestry mixture (from MSP tracts, not this variant)
-gla_arm <- matrix(c(0.70, 0.25, 0.05), nrow = 1,
-                   dimnames = list("p", c("AFR", "EUR", "NAT")))
-
-r_gla <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes,
-                              gla = gla_arm, arm_id = 0L)
-
-cat("Without GLA -> AFR total:", sum(r_raw$AFR),
-    " EUR total:", sum(r_raw$EUR), " NAT total:", sum(r_raw$NAT), "\n")
-cat("With GLA    -> AFR total:", round(sum(r_gla$AFR), 2),
-    " EUR total:", round(sum(r_gla$EUR), 2),
-    " NAT total:", round(sum(r_gla$NAT), 2), "\n")
+```{r c-shrink}
+half <- matrix(1/3, nrow = 1, ncol = 3,
+               dimnames = list("all", c("AFR", "EUR", "NAT")))
+shrunk <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes,
+                              gla = half, arm_id = 0L)
+rbind(raw    = c(AFR = sum(raw$AFR), EUR = sum(raw$EUR)),
+      shrunk = c(AFR = sum(shrunk$AFR), EUR = sum(shrunk$EUR)))
 ```
 
-Here `w = 10/11 ≈ 0.91` — the near-total ambiguity is almost fully
-discounted, and the ten mixed-het carriers now split roughly 2:1 toward AFR
-(matching the arm's 0.70/0.25 mixture) instead of being handed to EUR
-outright. Same ten carriers, same one pure-EUR data point — but the
-GLA-informed split reflects what's actually known about *this arm, this
-cohort*, instead of extrapolating from one sample. The pure singleton from
-B.1 is the same mechanism at its extreme (`w = 1`, no unambiguous carriers at
-all):
+Here 10 of the variant's 12 alternate alleles are ambiguous, so
+\(w = 10/12\). Each heterozygote's African share becomes
+\((2/12) \cdot 0 + (10/12) \cdot (1/2) = 5/12 \approx 0.42\) instead of 0:
 
-```{r gla-singleton}
-gt_s  <- matrix(1L, nrow = 1, ncol = 1)
-anc_s <- matrix(2L, nrow = 1, ncol = 1)   # code 2 = AFR/EUR
-
-r_flat <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes)                      # gla=NULL (default)
-r_gla_s <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes,
-                                gla = gla_arm, arm_id = 0L)
-
-cat("Without GLA (flat fallback) -> AFR:", r_flat$AFR[1,1],
-    " EUR:", r_flat$EUR[1,1], " NAT:", r_flat$NAT[1,1], "\n")
-cat("With GLA (this arm's ancestry) -> AFR:", round(r_gla_s$AFR[1,1], 3),
-    " EUR:", round(r_gla_s$EUR[1,1], 3), " NAT:", round(r_gla_s$NAT[1,1], 3), "\n")
+```{r c-share}
+shrunk$AFR[1, 1]
 ```
 
-In practice you won't build `gla`/`arm_id` by hand — `ancestry_split(mode =
-"dosage")` computes both automatically from the MSP file's tracts and
-applies them for you. Pass `use_gla = FALSE` to turn shrinkage off and get
-the flat Parts A/B behavior instead, e.g. for comparing against the
-original estimator:
+The variant from A.1 has much more unambiguous evidence: one ambiguous
+allele out of seven, so \(w = 1/7\), and S4's African share moves only
+slightly, from 2/3 to \((6/7)(2/3) + (1/7)(1/2) = 9/14 \approx 0.64\):
 
-```r
-split_gla  <- ancestry_split(vcf_path, msp_path, mode = "dosage")                    # use_gla=TRUE (default)
-split_flat <- ancestry_split(vcf_path, msp_path, mode = "dosage", use_gla = FALSE)
+```{r c-a1}
+# S4 is the 4th sample
+split_diploid(gt, anc, gla = matrix(0.5, nrow = 1, ncol = 2), arm_id = 0L)$african[1, 4]
 ```
 
-See `?split_diploid_multi` and `?split_haplotype_multi` for full argument
-documentation. Next: `vignette("toy-vcf-msp-example")` builds these same
-inputs from real VCF + MSP file formats.
+You do not need to set the target yourself: `ancestry_split(mode =
+"dosage")` always applies it.
 
 ## Session information
 

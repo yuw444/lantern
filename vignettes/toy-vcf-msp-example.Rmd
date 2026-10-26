@@ -14,27 +14,34 @@ library(lantern)
 
 ## Overview
 
-`ancestry_split()` (Step 1) is LANTERN's entry point once you have a
-phased VCF and an RFMix MSP file: it parses both, intersects samples, maps
-variants to ancestry tracts, and runs either split via a single `mode`
-argument (`"haplotype"` or `"dosage"`) — see `vignette("split-intuition")`
-for what each mode computes on the underlying matrices.
+`ancestry_split()` takes two files: a phased VCF with the genotypes and an
+RFMix `.msp.tsv` file with the local ancestry. This vignette builds both
+files by hand for a tiny example, small enough that every number in the
+output can be checked against the input. Part A uses two populations.
+Part B uses four, to show that nothing about the call changes when there
+are more populations.
 
-Population count and names come directly from the MSP header, so the same
-call works unchanged for K = 2 or K > 2. Part A builds a two-population
-toy VCF + MSP; Part B does the same for four populations.
+`vignette("lantern")` runs the full analysis on a larger simulated
+dataset, and `vignette("split-intuition")` explains the arithmetic of the
+split.
 
 ***
 
 # Part A: Two populations
 
-```{r toy-files}
+## The input files
+
+We write the files to a temporary directory. The VCF has three variants
+and three samples (S1, S2, S3). The genotypes are phased: in `0|1` the
+first number is the allele on the first copy of the chromosome
+(haplotype 0) and the second number the allele on the second copy
+(haplotype 1).
+
+```{r toy-vcf}
 tmp_dir  <- tempfile()
 dir.create(tmp_dir)
 vcf_path <- file.path(tmp_dir, "phased.vcf")
-msp_path <- file.path(tmp_dir, "ancestry.msp.tsv")
 
-# 3 variants × 3 samples, phased GTs
 writeLines(c(
   "##fileformat=VCFv4.1",
   '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
@@ -44,10 +51,24 @@ writeLines(c(
   paste(c("19","1200",".","C","T","100","PASS",".","GT","1|1","0|1","1|0"), collapse = "\t"),
   paste(c("19","2100",".","G","A","100","PASS",".","GT","0|0","1|0","0|1"), collapse = "\t")
 ), vcf_path)
+```
 
-# RFMix MSP: 2 ancestry tracts, pop codes AFR=0 EUR=1
-#   tract 1 [1000,2000): S1=AFR|EUR  S2=EUR|AFR  S3=AFR|EUR
-#   tract 2 [2000,3000): S1=EUR|AFR  S2=AFR|EUR  S3=EUR|AFR
+The MSP file divides the chromosome into segments (tracts) and gives, for
+each sample and haplotype, the population that segment came from. Its
+first line maps population names to the codes used in the file (AFR = 0,
+EUR = 1). The ancestry columns are named `<sample>.0` and `<sample>.1` for
+the two haplotypes. Our file has two tracts:
+
+| Tract | Positions   | S1 (hap 0, hap 1) | S2        | S3        |
+|-------|-------------|-------------------|-----------|-----------|
+| 1     | 1000 - 2000 | AFR, EUR          | EUR, AFR  | AFR, EUR  |
+| 2     | 2000 - 3000 | EUR, AFR          | AFR, EUR  | EUR, AFR  |
+
+Variants at positions 1100 and 1200 fall in tract 1, and the variant at
+2100 in tract 2.
+
+```{r toy-msp}
+msp_path <- file.path(tmp_dir, "ancestry.msp.tsv")
 writeLines(c(
   paste(c("#Subpopulation order/codes: AFR=0", "EUR=1"), collapse = "\t"),
   paste(c("#chm","spos","epos","sgpos","egpos","n snps",
@@ -57,82 +78,119 @@ writeLines(c(
 ), msp_path)
 ```
 
-```{r toy-split}
-phased   <- ancestry_split(vcf_path, msp_path, mode = "haplotype", verbose = FALSE)
-unphased <- ancestry_split(vcf_path, msp_path, mode = "dosage",    verbose = FALSE)
+## Splitting with phase (`mode = "haplotype"`)
 
-pop_names <- setdiff(names(phased),
-                     c("variant_info", "sample_ids", "mode",
-                       "ancestry_counts", "tract_info", "overlap"))
-cat("Populations:", paste(pop_names, collapse = ", "), "\n\n")
+Because the genotypes are phased, we know which haplotype carries each
+allele, and the MSP file tells us that haplotype's population. Each allele
+is simply counted for that population.
 
-cat("=== phased (mode = \"haplotype\") ===\n")
-for (p in pop_names) { cat(p, "dosage:\n"); print(phased[[p]]) }
-
-cat("\n=== unphased (mode = \"dosage\") ===\n")
-for (p in pop_names) { cat(p, "dosage:\n"); print(unphased[[p]]) }
-
-cat("\nVariants kept:", nrow(phased$variant_info), "\n")
-cat("Samples:      ", length(phased$sample_ids), "\n")
-
-# Sanity check: phased AFR + EUR reconstructs the raw diploid genotype exactly
-vcf_lines <- readLines(vcf_path)[-(1:3)]
-raw <- do.call(rbind, lapply(vcf_lines, function(l) {
-  gts <- strsplit(l, "\t")[[1]][10:12]
-  vapply(gts, function(g) sum(as.integer(strsplit(g, "|", fixed = TRUE)[[1]])), integer(1))
-}))
-max_err <- max(abs((phased$AFR + phased$EUR) - raw))
-cat("Max phased reconstruction error (must be 0):", max_err, "\n")
+```{r toy-split-phased}
+phased <- ancestry_split(vcf_path, msp_path, mode = "haplotype", verbose = FALSE)
+names(phased)
 ```
 
-Each call returns a named list: one dosage matrix per population (named
-from the MSP header) plus `variant_info`, `sample_ids`, `mode`,
-`ancestry_counts`, and `overlap`. Need both splits on a large cohort
-routinely? Cache each result (e.g. to RDS) rather than re-parsing the
-VCF/MSP on every run — `ancestry_split()` always re-parses from scratch.
+The result holds one dosage matrix per population, named from the MSP
+header (`AFR`, `EUR`), plus information about the variants and samples.
+The matrices have one row per variant and one column per sample. To make
+them easier to read we label them with positions and sample IDs:
 
-The backward-compatible `ancestry_split_dosage()` (matrix or VCF/MSP
-input) and `ancestry_split_phased()` (VCF/MSP input, optionally also
-writing GDS) wrap the same logic for existing code — see
-`?ancestry_split_dosage` and `?ancestry_split_phased`.
+```{r toy-label}
+label <- function(m, split) {
+  dimnames(m) <- list(split$variant_info$pos, split$sample_ids)
+  m
+}
+label(phased$AFR, phased)
+label(phased$EUR, phased)
+```
+
+Take S1 at position 1100. Its genotype is `0|1`, so the alternate allele
+is on haplotype 1. In tract 1, S1's haplotype 1 is European, so the allele
+counts as 1 European dosage and 0 African. At position 1200, S1 is `1|1`
+with one African and one European haplotype, giving 1 African and 1
+European. Adding the two matrices gives back each sample's genotype (its
+total number of alternate alleles):
+
+```{r toy-total}
+label(phased$AFR + phased$EUR, phased)
+```
+
+## Splitting without phase (`mode = "dosage"`)
+
+Often phase is unreliable for rare variants, or we prefer not to rely on
+it. `mode = "dosage"` uses only the unphased genotype (0, 1 or 2) and each
+sample's pair of ancestries in the tract.
+
+```{r toy-split-dosage}
+unphased <- ancestry_split(vcf_path, msp_path, mode = "dosage", verbose = FALSE)
+label(unphased$AFR, unphased)
+label(unphased$EUR, unphased)
+```
+
+Every sample in this example has one African and one European haplotype
+in both tracts, so every heterozygote is ambiguous: the genotype does not
+say which haplotype carries the allele. Homozygotes are not ambiguous. S1
+at 1200 has two alternate alleles, one on each haplotype, so it again gets
+1 African and 1 European. An ambiguous heterozygote's allele is shared
+between its two populations. The shares are estimated from the carriers of
+the same variant whose ancestry is unambiguous, and pulled toward 1/2 the
+less such evidence there is. Here no carrier of a single allele is
+unambiguous, so every ambiguous allele is split exactly in half.
+`vignette("split-intuition")` shows the calculation for less extreme
+cases. The total is still each sample's genotype:
+
+```{r toy-total-dosage}
+label(unphased$AFR + unphased$EUR, unphased)
+```
+
+## Related functions
+
+`ancestry_split_dosage()` and `ancestry_split_phased()` are older
+interfaces to the same split, kept so existing code keeps working. New
+code should use `ancestry_split()`. `ancestry_split()` reads both files
+every time it is called, so for a large cohort it is worth saving the
+result (for example with `saveRDS()`) if you need it more than once.
 
 ***
 
 # Part B: More than two populations (K = 4)
 
-Nothing about the call changes — same function, same `mode` argument,
-same return shape, just more populations declared in the MSP header.
+Some admixed groups, such as many Hispanic/Latino populations, have
+ancestry from three or more populations. The population names and codes
+come from the MSP header, so the same call handles any number of
+populations. Here we simulate 24 samples, ten rare variants and a single
+tract in which each haplotype is randomly AFR, EUR, NAT or EAS.
 
-```{r k4-setup}
-tmp_dir4 <- tempfile()
-dir.create(tmp_dir4)
-vcf4_path <- file.path(tmp_dir4, "phased4.vcf")
-msp4_path <- file.path(tmp_dir4, "ancestry4.msp.tsv")
+First, the VCF, with random phased genotypes:
 
+```{r k4-vcf}
 set.seed(99)
-n_samp_k4 <- 24
-samp_k4   <- paste0("S", seq_len(n_samp_k4))
+samples4  <- paste0("S", 1:24)
+vcf4_path <- file.path(tmp_dir, "phased4.vcf")
 
-# 10 variants, phased GT, mostly rare
-gt_lines <- vapply(seq_len(10), function(i) {
-  gts <- sample(c("0|0","0|1","1|0","1|1"), n_samp_k4, replace = TRUE,
+gt_lines <- vapply(1:10, function(i) {
+  gts <- sample(c("0|0", "0|1", "1|0", "1|1"), length(samples4), replace = TRUE,
                 prob = c(0.85, 0.06, 0.06, 0.03))
-  paste(c("19", 1000L + i * 100L, ".", "A", "T", "100", "PASS", ".", "GT", gts),
+  paste(c("19", 1000 + i * 100, ".", "A", "T", "100", "PASS", ".", "GT", gts),
         collapse = "\t")
 }, character(1))
 writeLines(c(
   "##fileformat=VCFv4.1",
   '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
-  paste(c("#CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT", samp_k4),
+  paste(c("#CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT", samples4),
         collapse = "\t"),
   gt_lines
 ), vcf4_path)
+```
 
-# Single tract spanning all variants; each sample gets a random pair of
-# the four ancestries per haplotype
-pop_codes_k4 <- c(AFR = 0L, EUR = 1L, NAT = 2L, EAS = 3L)
-hap_cols <- unlist(lapply(samp_k4, function(s) paste0(s, c(".0", ".1"))))
-hap_anc  <- sample(pop_codes_k4, length(hap_cols), replace = TRUE)
+Then the MSP file. The header now declares four populations, and the
+single tract (positions 1000 to 3000) holds one random population code per
+haplotype:
+
+```{r k4-msp}
+msp4_path <- file.path(tmp_dir, "ancestry4.msp.tsv")
+hap_cols  <- paste0(rep(samples4, each = 2), c(".0", ".1"))
+hap_anc   <- sample(0:3, length(hap_cols), replace = TRUE)
+
 writeLines(c(
   paste(c("#Subpopulation order/codes: AFR=0", "EUR=1", "NAT=2", "EAS=3"),
         collapse = "\t"),
@@ -141,26 +199,45 @@ writeLines(c(
 ), msp4_path)
 ```
 
+The call is the same as in Part A:
+
 ```{r k4-split}
 phased4   <- ancestry_split(vcf4_path, msp4_path, mode = "haplotype",
-                             chrom = "19", verbose = FALSE)
+                            chrom = "19", verbose = FALSE)
 unphased4 <- ancestry_split(vcf4_path, msp4_path, mode = "dosage",
-                             chrom = "19", verbose = FALSE)
-
-pop4 <- setdiff(names(phased4),
-                c("variant_info", "sample_ids", "mode",
-                  "ancestry_counts", "tract_info", "overlap"))
-cat("Populations recovered from the MSP header:", paste(pop4, collapse = ", "), "\n")
-cat("Variants kept:", nrow(phased4$variant_info), "\n")
-cat("ancestry_counts columns:", paste(colnames(phased4$ancestry_counts), collapse = ", "), "\n\n")
-
-cat("=== phased AFR (first 3 variants) ===\n"); print(phased4$AFR[1:3, ])
-cat("=== unphased AFR (first 3 variants) ===\n"); print(round(unphased4$AFR[1:3, ], 2))
+                            chrom = "19", verbose = FALSE)
 ```
 
-Next: `vignette("real-data-chr19")` takes a split result like this one
-through `write_ancestry_gds()` (Step 2) and `ancestry_smmat()` (Step 3) on
-real genotype data.
+There is now one dosage matrix per population, and `ancestry_counts`, the
+number of samples with both haplotypes from each population at each
+variant, has four columns:
+
+```{r k4-show}
+names(phased4)[1:4]
+head(phased4$ancestry_counts, 3)
+```
+
+As before, the phased split assigns whole alleles, and the unphased split
+shares an ambiguous allele between the two populations of that sample's
+haplotypes. Here is the first sample and variant where the unphased split
+gives a fraction, with its dosage in each of the four populations under
+both modes:
+
+```{r k4-compare}
+i <- which(unphased4$AFR %% 1 > 0, arr.ind = TRUE)[1, ]
+c(variant = phased4$variant_info$pos[i[1]], sample = phased4$sample_ids[i[2]])
+pops <- c("AFR", "EUR", "NAT", "EAS")
+rbind(haplotype = sapply(phased4[pops], function(m) m[i[1], i[2]]),
+      dosage    = sapply(unphased4[pops], function(m) m[i[1], i[2]]))
+```
+
+In haplotype mode the allele goes entirely to one population. In dosage
+mode it is shared between the two populations of the sample's
+haplotypes, and the other two populations get 0.
+
+```{r cleanup, include = FALSE}
+unlink(tmp_dir, recursive = TRUE)
+```
 
 ## Session information
 

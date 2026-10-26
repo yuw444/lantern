@@ -23,8 +23,8 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 n_samples <- 60
 ids       <- sprintf("S%03d", seq_len(n_samples))
-spos      <- c(1, 5, 10, 15, 30, 35, 40, 45) * 1e6
-epos      <- spos + 4e6 - 1
+spos      <- as.integer(c(1, 5, 10, 15, 30, 35, 40, 45) * 1e6)
+epos      <- spos + 4000000L - 1L
 n_win     <- length(spos)
 n_per_win <- 25
 

@@ -1,12 +1,12 @@
 Package: lantern
 Type: Package
 Title: Ancestry-Specific Rare Variant Association Analysis
-Version: 0.99.0
+Version: 0.99.1
 Authors@R: c(
     person(given = "Yu",
            family = "Wang",
            role = c("aut", "cre"),
-           email = "wangyu19940804@gmail.com"),
+           email = "ywang@mcw.edu"),
     person(given = "Bjoernar",
            family = "Tuftin",
            role = "aut",
@@ -18,7 +18,8 @@ Authors@R: c(
 Description: Ancestry-specific rare variant burden testing for admixed
     populations. Splits genotype dosages by local ancestry (as inferred by
     'RFMix') into per-ancestry dosages, using either phased haplotypes or
-    unphased genotypes with shrinkage toward global ancestry, and writes
+    unphased genotypes, where ambiguous mixed-ancestry heterozygotes are
+    split with shrinkage toward 1/2, and writes
     them to 'SeqArray' GDS files. Ancestry-stratified gene-level tests are
     then run with the 'SMMAT' framework of Chen et al. (2019)
     <doi:10.1016/j.ajhg.2018.12.012> as implemented in 'GMMAT', and the

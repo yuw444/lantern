@@ -1,6 +1,25 @@
 #include "ancestry.h"
 
 // ============================================================================
+// User interrupts
+// ============================================================================
+// Long loops call R_CheckUserInterrupt() every INTERRUPT_EVERY rows so Ctrl-C /
+// Esc works. It long-jumps back to R, which is safe wherever only PROTECTed
+// objects and R_alloc() memory are live (R reclaims both). Code holding a
+// FILE* uses interrupt_pending() instead, so it can close the file first.
+#define INTERRUPT_EVERY 1024
+#define INTERRUPT_EVERY_CELLS (1 << 20)
+
+static void check_interrupt_fn(void *dummy) {
+    (void) dummy;
+    R_CheckUserInterrupt();
+}
+
+static int interrupt_pending(void) {
+    return !R_ToplevelExec(check_interrupt_fn, NULL);
+}
+
+// ============================================================================
 // Helper: Count ancestry-genotype combinations for a variant
 // ============================================================================
 // Returns counts for a single variant (row):
@@ -44,6 +63,7 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     int *mat_ptr = INTEGER(mat_int);
     
     for (int i = 0; i < nrow; i++) {
+        if (i % INTERRUPT_EVERY == 0) R_CheckUserInterrupt();
         res_ptr[i] = 0;
         for (int j = 0; j < ncol; j++) {
             if (mat_ptr[i + nrow * j] == target_code) {
@@ -90,6 +110,7 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry, SEXP gla, SEXP 
 
     // Process each variant (row)
     for (int i = 0; i < nrow; i++) {
+        if (i % INTERRUPT_EVERY == 0) R_CheckUserInterrupt();
         // Count ancestry-genotype combinations for this variant
         VariantCounts cnt = count_variant_combinations(gt_ptr, an_ptr, nrow, ncol, i);
 
@@ -252,6 +273,10 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path) {
     static const int code_map[4] = {1, 0, 2, 3};
 
     for (int v = 0; v < n_variants; v++) {
+        if (v % INTERRUPT_EVERY == 0 && interrupt_pending()) {
+            fclose(fp);
+            error("Interrupted while reading bed file");
+        }
         unsigned char buffer[store_size];
         if (fread(buffer, 1, store_size, fp) != (size_t)store_size) {
             fclose(fp);
@@ -354,6 +379,7 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
     int    *amb = (int *)    R_alloc(M, sizeof(int));   /* ambiguous-het count per mixed pair */
 
     for (int i = 0; i < nrow; i++) {
+        if (i % INTERRUPT_EVERY == 0) R_CheckUserInterrupt();
 
         /* -- Step 1: accumulate unambiguous alt allele counts -- */
         double D = 0.0;
@@ -514,6 +540,7 @@ static SEXP split_phased_by_ancestry_c(SEXP gt_hap0, SEXP gt_hap1,
 
     int n = nrow * ncol;
     for (int k = 0; k < n; k++) {
+        if (k % INTERRUPT_EVERY_CELLS == 0) R_CheckUserInterrupt();
         int g0 = (gh0_ptr[k] == NA_INTEGER) ? 0 : gh0_ptr[k];
         int g1 = (gh1_ptr[k] == NA_INTEGER) ? 0 : gh1_ptr[k];
         int a0 = ah0_ptr[k];
@@ -589,6 +616,7 @@ static SEXP split_phased_multi_c(SEXP gt_hap0, SEXP gt_hap1,
 
     /* Route each haplotype allele to its population pool */
     for (int k = 0; k < n; k++) {
+        if (k % INTERRUPT_EVERY_CELLS == 0) R_CheckUserInterrupt();
         int g0 = (gh0_ptr[k] == NA_INTEGER) ? 0 : gh0_ptr[k];
         int g1 = (gh1_ptr[k] == NA_INTEGER) ? 0 : gh1_ptr[k];
         int a0 = ah0_ptr[k];

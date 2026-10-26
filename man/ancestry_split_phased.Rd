@@ -7,7 +7,7 @@
 ancestry_split_phased(
   vcf_path,
   msp_path,
-  out_path,
+  out_path = NULL,
   chrom = NULL,
   write_vcf = TRUE,
   verbose = TRUE
@@ -22,7 +22,8 @@ to force one.}
 
 \item{msp_path}{Path to RFMix MSP file (plain text or gzipped TSV).}
 
-\item{out_path}{Output directory for GDS and cache files.}
+\item{out_path}{Output directory for the GDS files. Only needed (and
+then required) when \code{write_vcf = TRUE}.}
 
 \item{chrom}{Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
 If \code{NULL}, all chromosomes present in the VCF are used.}

@@ -41,6 +41,8 @@
 #'
 #' @export
 cauchy_combine <- function(p_values, weights = NULL) {
+  if (!is.numeric(p_values)) stop("p_values must be numeric")
+  if (!is.null(weights) && !is.numeric(weights)) stop("weights must be numeric")
   p <- as.numeric(p_values)
   if (length(p) < 2) stop("p_values must have length >= 2")
   if (any(is.na(p)))  stop("p_values contains NA")

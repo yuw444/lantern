@@ -4,8 +4,6 @@
 ^.*\.tar\.gz$
 ^.*\.Rproj$
 ^\.github$
-^vignettes/.*\.orig$
-^vignettes/.*\.draft$
 ^_pkgdown\.yml$
 ^pkgdown$
 ^AGENTS\.md$

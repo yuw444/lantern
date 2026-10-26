@@ -28,35 +28,34 @@
 .compute_gene_weights <- function(ancestry_counts, variant_info,
                                    gene_group_file, pop_names) {
   gg <- data.table::fread(gene_group_file, header = FALSE,
-                           col.names = c("gene", "chr", "pos", "ref", "alt", "weight"))
+                          col.names = c("gene", "chr", "pos", "ref", "alt", "weight"))
 
   avail_pops <- intersect(pop_names, colnames(ancestry_counts))
   if (length(avail_pops) == 0) {
-    warning("None of the population names (", paste(pop_names, collapse = ", "),
+    warning("None of the population names (", toString(pop_names),
             ") match ancestry_counts columns (",
-            paste(colnames(ancestry_counts), collapse = ", "),
+            toString(colnames(ancestry_counts)),
             "); falling back to equal weights.")
     return(NULL)
   }
 
-  vi_key <- paste0(sub("^chr", "", as.character(variant_info$chrom)), ":",
+  vi_key  <- paste0(sub("^chr", "", as.character(variant_info$chrom)), ":",
                     variant_info$pos)
-  gg_key <- paste0(sub("^chr", "", as.character(gg$chr)), ":", gg$pos)
+  gg_key  <- paste0(sub("^chr", "", as.character(gg$chr)), ":", gg$pos)
   row_idx <- match(gg_key, vi_key)
+  genes   <- factor(gg$gene, levels = unique(gg$gene))
 
-  genes_unique <- unique(gg$gene)
-  weights_mat  <- matrix(1, nrow = length(genes_unique), ncol = length(pop_names),
-                          dimnames = list(genes_unique, pop_names))
-
-  for (gene in genes_unique) {
-    idx <- row_idx[gg$gene == gene]
-    idx <- idx[!is.na(idx)]
-    if (length(idx) == 0) next
-    for (pop in avail_pops) {
-      weights_mat[gene, pop] <- stats::median(ancestry_counts[idx, pop])
-    }
-  }
-
+  # Weight 1 for populations without counts and for genes none of whose
+  # variants are in variant_info; otherwise the median count over the
+  # gene's variants.
+  weights_mat <- matrix(1, nrow = nlevels(genes), ncol = length(pop_names),
+                        dimnames = list(levels(genes), pop_names))
+  hit <- !is.na(row_idx)
+  med <- vapply(avail_pops, function(pop)
+    as.numeric(tapply(ancestry_counts[row_idx[hit], pop], genes[hit], stats::median)),
+    numeric(nlevels(genes)))
+  med <- matrix(med, nrow = nlevels(genes), dimnames = list(levels(genes), avail_pops))
+  weights_mat[, avail_pops] <- ifelse(is.na(med), 1, med)
   weights_mat
 }
 
@@ -173,7 +172,6 @@ ancestry_smmat <- function(gds_paths, pheno, formula, kinship, gene_group_file,
                             gene_col = "group", p_col = "E.pval",
                             MAF.range = c(0, 0.5), miss.cutoff = 1,
                             method = "davies", ncores = 1, verbose = TRUE, ...) {
-
   if (!requireNamespace("GMMAT", quietly = TRUE))
     stop("Package 'GMMAT' is required for ancestry_smmat(). Install with: ",
          "install.packages('GMMAT') (not available via conda/Bioconductor).")
@@ -182,10 +180,104 @@ ancestry_smmat <- function(gds_paths, pheno, formula, kinship, gene_group_file,
   if (!requireNamespace("SeqVarTools", quietly = TRUE))
     stop("Package 'SeqVarTools' is required for ancestry_smmat(). Install ",
          "with: BiocManager::install('SeqVarTools')")
+  .check_smmat_args(gds_paths, pheno, formula, kinship, ancestry_counts,
+                    variant_info, id_col, family, gene_col, p_col, ncores,
+                    verbose)
 
+  gene_group_file <- .normalized_gene_groups(gene_group_file)
+  on.exit(unlink(gene_group_file), add = TRUE)
+  gds_paths <- as.list(gds_paths)
+  pop_names <- names(gds_paths)
+
+  if (verbose) message("=== LANTERN Association Testing (Step 3) ===\n")
+
+  # ---- Step 1: Sample overlap across pheno, kinship, and all GDS files ----
+  if (verbose) message("Step 1: Intersecting sample IDs...")
+  ids <- .smmat_common_samples(gds_paths, pheno, kinship, id_col)
+  if (verbose) message("  Common samples: ", length(ids))
+  kin_idx <- match(ids, rownames(kinship))
+
+  # ---- Step 2: Fit the null model once ----
+  if (verbose) message("\nStep 2: Fitting null model (glmmkin)...")
+  model0 <- GMMAT::glmmkin(formula, data = pheno[match(ids, pheno[[id_col]]), , drop = FALSE],
+                           kins = as.matrix(kinship[kin_idx, kin_idx, drop = FALSE]),
+                           id = id_col, family = family)
+
+  # ---- Step 3: Run SMMAT for each population ----
+  smmat_results <- lapply(stats::setNames(seq_along(pop_names), pop_names), function(i) {
+    if (verbose) message("\nStep 3: Running SMMAT for ", pop_names[i],
+                         " (", i, "/", length(pop_names), ")...")
+    GMMAT::SMMAT(model0, gds_paths[[i]], gene_group_file,
+                 MAF.range = MAF.range, miss.cutoff = miss.cutoff,
+                 method = method, is.dosage = TRUE, ncores = ncores, ...)
+  })
+
+  # ---- Step 4: Merge per-gene p-values ----
+  if (verbose) message("\nStep 4: Merging per-gene p-values...")
+  p_mat <- .merge_smmat_pvalues(smmat_results, gene_col, p_col)
+
+  # ---- Step 5: Per-gene ancestry weights ----
+  weights_mat <- NULL
+  if (!is.null(ancestry_counts)) {
+    if (verbose) message("\nStep 5: Computing per-gene ancestry weights...")
+    weights_mat <- .compute_gene_weights(ancestry_counts, variant_info,
+                                         gene_group_file, pop_names)
+  } else if (verbose) {
+    message("\nStep 5: ancestry_counts/variant_info not supplied; ",
+            "Cauchy combination will use equal weights.")
+  }
+
+  # ---- Step 6: Cauchy-combine p-values per gene ----
+  if (verbose) message("\nStep 6: Cauchy-combining p-values per gene...")
+  results <- .combine_gene_pvalues(p_mat, weights_mat)
+  if (verbose) message("\n=== Step 3 Complete: ", nrow(results), " genes ===\n")
+
+  list(results = results, smmat_results = smmat_results)
+}
+
+.check_smmat_args <- function(gds_paths, pheno, formula, kinship,
+                              ancestry_counts, variant_info, id_col, family,
+                              gene_col, p_col, ncores, verbose) {
+  pop_names <- names(gds_paths)
+  if (is.null(pop_names) || any(pop_names == "") || anyDuplicated(pop_names))
+    stop("gds_paths must be a named list/vector, e.g. c(AFR = ..., EUR = ...)")
+  lapply(gds_paths, .check_file, arg = "gds_paths")
+  if (!is.data.frame(pheno))
+    stop("`pheno` must be a data.frame", call. = FALSE)
+  .check_string(id_col)
+  if (!id_col %in% names(pheno))
+    stop("pheno must contain an id column named '", id_col, "'")
+  if (!inherits(formula, "formula"))
+    stop("`formula` must be a model formula, e.g. y ~ age + sex", call. = FALSE)
+  if (is.null(rownames(kinship)) || is.null(colnames(kinship)))
+    stop("kinship must have row and column names corresponding to sample IDs")
+  if (nrow(kinship) != ncol(kinship))
+    stop("`kinship` must be a square matrix", call. = FALSE)
+  if (!inherits(family, "family"))
+    stop("`family` must be a family object, e.g. gaussian() or binomial()",
+         call. = FALSE)
+  if (is.null(ancestry_counts) != is.null(variant_info))
+    stop("Supply `ancestry_counts` and `variant_info` together (both from ",
+         "ancestry_split()), or neither for equal weights", call. = FALSE)
+  if (!is.null(variant_info) && nrow(variant_info) != nrow(ancestry_counts))
+    stop("`ancestry_counts` and `variant_info` must have one row per variant",
+         call. = FALSE)
+  .check_string(gene_col)
+  .check_string(p_col)
+  .check_count(ncores)
+  .check_flag(verbose)
+  invisible(NULL)
+}
+
+# Gene-group file (path or data.frame) copied to a fresh temp file with any
+# leading "chr" stripped from the chr column, so it matches the GDS files:
+# SeqArray::seqVCF2GDS() strips "chr", and GMMAT::SMMAT() matches variants
+# by exact chr:pos:ref:alt strings, so a "chr19" group file would silently
+# drop every variant. The caller's file or data.frame is never modified.
+# Returns the temp file's path; the caller deletes it.
+.normalized_gene_groups <- function(gene_group_file) {
   if (is.character(gene_group_file)) {
-    if (!file.exists(gene_group_file))
-      stop("gene_group_file not found: ", gene_group_file)
+    .check_file(gene_group_file)
     gg_df <- data.table::fread(gene_group_file, header = FALSE)
   } else if (is.data.frame(gene_group_file) || is.matrix(gene_group_file)) {
     gg_df <- as.data.frame(gene_group_file)
@@ -195,126 +287,67 @@ ancestry_smmat <- function(gds_paths, pheno, formula, kinship, gene_group_file,
   }
   if (ncol(gg_df) != 6)
     stop("gene_group_file must have exactly 6 columns: gene, chr, pos, ref, alt, weight")
-  # Strip a leading "chr" from the chr column (2nd column) into a fresh
-  # temp copy -- never the caller's own path/data.frame. SeqArray::
-  # seqVCF2GDS() always strips "chr" when writing GDS files, so
-  # GMMAT::SMMAT()'s own chr:pos:ref:alt string matching against the GDS
-  # silently drops every variant (and the whole gene, if all its variants
-  # are affected) whenever gene_group_file uses a "chr19" convention
-  # instead of a bare "19". Normalizing here makes that automatic instead
-  # of a silent per-caller footgun, and writing to a fresh tempfile (always,
-  # even when gene_group_file was already a path) means the caller's own
-  # file is never modified or deleted.
   gg_df[[2]] <- sub("^chr", "", as.character(gg_df[[2]]))
   gg_tmp <- tempfile(fileext = ".tsv")
   utils::write.table(gg_df, gg_tmp, sep = "\t", row.names = FALSE,
-                      col.names = FALSE, quote = FALSE)
-  on.exit(unlink(gg_tmp), add = TRUE)
-  gene_group_file <- gg_tmp
+                     col.names = FALSE, quote = FALSE)
+  gg_tmp
+}
 
-  gds_paths <- as.list(gds_paths)
-  pop_names <- names(gds_paths)
-  if (is.null(pop_names) || any(pop_names == ""))
-    stop("gds_paths must be a named list/vector, e.g. c(AFR = ..., EUR = ...)")
-  K <- length(pop_names)
-
-  if (verbose) message("=== LANTERN Association Testing (Step 3) ===\n")
-
-  # ---- Step 1: Sample overlap across pheno, kinship, and all GDS files ----
-  if (verbose) message("Step 1: Intersecting sample IDs...")
-  if (!id_col %in% names(pheno))
-    stop("pheno must contain an id column named '", id_col, "'")
-  if (is.null(rownames(kinship)) || is.null(colnames(kinship)))
-    stop("kinship must have row and column names corresponding to sample IDs")
-
-  gds_sample_ids <- lapply(gds_paths, function(p) {
+# Sample IDs present in the phenotype table, the kinship matrix and every
+# GDS file.
+.smmat_common_samples <- function(gds_paths, pheno, kinship, id_col) {
+  gds_ids <- lapply(gds_paths, function(p) {
     g <- SeqArray::seqOpen(p)
     on.exit(SeqArray::seqClose(g), add = TRUE)
     SeqArray::seqGetData(g, "sample.id")
   })
-
-  ids_common <- Reduce(intersect, c(list(pheno[[id_col]], rownames(kinship)),
-                                     gds_sample_ids))
-  if (length(ids_common) == 0)
+  ids <- Reduce(intersect, c(list(pheno[[id_col]], rownames(kinship)), gds_ids))
+  if (length(ids) == 0)
     stop("No overlapping sample IDs found among phenotype, kinship, and GDS files")
-  if (verbose) message("  Common samples: ", length(ids_common))
+  ids
+}
 
-  pheno_sub <- pheno[match(ids_common, pheno[[id_col]]), , drop = FALSE]
-  kin_idx   <- match(ids_common, rownames(kinship))
-  kin_sub   <- as.matrix(kinship[kin_idx, kin_idx, drop = FALSE])
-
-  # ---- Step 2: Fit the null model once ----
-  if (verbose) message("\nStep 2: Fitting null model (glmmkin)...")
-  model0 <- GMMAT::glmmkin(formula, data = pheno_sub, kins = kin_sub,
-                            id = id_col, family = family)
-
-  # ---- Step 3: Run SMMAT for each population ----
-  smmat_results <- vector("list", K)
-  names(smmat_results) <- pop_names
-  for (i in seq_len(K)) {
-    pop <- pop_names[i]
-    if (verbose) message("\nStep 3: Running SMMAT for ", pop,
-                         " (", i, "/", K, ")...")
-    smmat_results[[pop]] <- GMMAT::SMMAT(
-      model0, gds_paths[[pop]], gene_group_file,
-      MAF.range = MAF.range, miss.cutoff = miss.cutoff,
-      method = method, is.dosage = TRUE, ncores = ncores, ...)
-  }
-
-  # ---- Step 4: Merge per-gene p-values ----
-  if (verbose) message("\nStep 4: Merging per-gene p-values...")
-  for (pop in pop_names) {
-    if (!gene_col %in% names(smmat_results[[pop]]))
+# Genes x populations matrix of SMMAT p-values (NA where a population's
+# SMMAT run did not test the gene).
+.merge_smmat_pvalues <- function(smmat_results, gene_col, p_col) {
+  lapply(names(smmat_results), function(pop) {
+    cols <- names(smmat_results[[pop]])
+    if (!gene_col %in% cols)
       stop("Column '", gene_col, "' not found in SMMAT() output for ", pop)
-    if (!p_col %in% names(smmat_results[[pop]]))
+    if (!p_col %in% cols)
       stop("Column '", p_col, "' not found in SMMAT() output for ", pop,
-           "; available columns: ",
-           paste(names(smmat_results[[pop]]), collapse = ", "))
-  }
+           "; available columns: ", toString(cols))
+  })
   gene_ids <- Reduce(union, lapply(smmat_results, function(r) as.character(r[[gene_col]])))
-  p_mat <- matrix(NA_real_, nrow = length(gene_ids), ncol = K,
-                   dimnames = list(gene_ids, pop_names))
-  for (pop in pop_names) {
-    r <- smmat_results[[pop]]
-    p_mat[as.character(r[[gene_col]]), pop] <- r[[p_col]]
-  }
+  p_mat <- vapply(smmat_results, function(r)
+    as.numeric(r[[p_col]])[match(gene_ids, as.character(r[[gene_col]]))],
+    numeric(length(gene_ids)))
+  matrix(p_mat, nrow = length(gene_ids),
+         dimnames = list(gene_ids, names(smmat_results)))
+}
 
-  # ---- Step 5: Per-gene ancestry weights ----
-  weights_mat <- NULL
-  if (!is.null(ancestry_counts) && !is.null(variant_info)) {
-    if (verbose) message("\nStep 5: Computing per-gene ancestry weights...")
-    weights_mat <- .compute_gene_weights(ancestry_counts, variant_info,
-                                          gene_group_file, pop_names)
-  } else if (verbose) {
-    message("\nStep 5: ancestry_counts/variant_info not supplied; ",
-            "Cauchy combination will use equal weights.")
-  }
-
-  # ---- Step 6: Cauchy-combine p-values per gene ----
-  if (verbose) message("\nStep 6: Cauchy-combining p-values per gene...")
-  p_cauchy <- vapply(seq_along(gene_ids), function(i) {
-    p_row <- p_mat[i, ]
-    keep  <- !is.na(p_row)
+# One row per gene: p_<POP> columns, w_<POP> weight columns (if weights
+# were computed), and the Cauchy-combined p_cauchy (NA when fewer than two
+# populations have a p-value for the gene).
+.combine_gene_pvalues <- function(p_mat, weights_mat) {
+  gene_ids  <- rownames(p_mat)
+  pop_names <- colnames(p_mat)
+  w_rows    <- if (!is.null(weights_mat)) match(gene_ids, rownames(weights_mat))
+  p_cauchy  <- vapply(seq_along(gene_ids), function(i) {
+    keep <- !is.na(p_mat[i, ])
     if (sum(keep) < 2) return(NA_real_)
-    w <- if (!is.null(weights_mat) && gene_ids[i] %in% rownames(weights_mat)) {
-      weights_mat[gene_ids[i], pop_names][keep]
-    } else NULL
-    cauchy_combine(p_row[keep], weights = w)
+    w <- if (!is.null(weights_mat) && !is.na(w_rows[i]))
+      weights_mat[w_rows[i], pop_names][keep]
+    cauchy_combine(p_mat[i, keep], weights = w)
   }, numeric(1))
 
-  # ---- Step 7: Assemble result ----
   results <- data.frame(gene = gene_ids, stringsAsFactors = FALSE)
-  for (pop in pop_names) results[[paste0("p_", pop)]] <- p_mat[, pop]
-  if (!is.null(weights_mat)) {
-    row_match <- match(gene_ids, rownames(weights_mat))
-    for (pop in pop_names) {
-      results[[paste0("w_", pop)]] <- unname(weights_mat[row_match, pop])
-    }
-  }
+  results[paste0("p_", pop_names)] <- as.data.frame(unname(p_mat))
+  if (!is.null(weights_mat))
+    results[paste0("w_", pop_names)] <-
+      as.data.frame(unname(weights_mat[w_rows, pop_names, drop = FALSE]))
   results$p_cauchy <- p_cauchy
   rownames(results) <- NULL
-
-  if (verbose) message("\n=== Step 3 Complete: ", nrow(results), " genes ===\n")
-
-  list(results = results, smmat_results = smmat_results)
+  results
 }

@@ -41,9 +41,11 @@ Only used when \code{vcf_path}/\code{msp_path} are supplied.}
 }
 \value{
 List with elements:
-  \item{african}{African ancestry-specific dosage matrix}
+  \item{african}{African ancestry-specific dosage matrix (variants x
+    samples)}
   \item{european}{European ancestry-specific dosage matrix}
-  \item{counts}{List of ancestry counts per region/sample}
+  \item{counts}{List (\code{african}, \code{european}, \code{mixed}) of
+    per-variant counts of samples with ancestry code 3, 1 and 2}
   \item{overlap}{Overlap information}
 }
 \description{
@@ -51,18 +53,21 @@ Complete pipeline: split genotype matrix by ancestry, return dosage matrices.
 Handles sample and variant mismatches by using only overlapping data.
 Memory efficient: single-pass subsetting using index vectors.
 }
-\section{GLA shrinkage}{
- The \code{vcf_path}/\code{msp_path} shortcut
-  delegates to \code{\link{ancestry_split}}, which computes and applies
-  per-arm global local ancestry (GLA) shrinkage automatically from tract
-  positions. The direct \code{gt_matrix}/\code{pt_matrix} path has no
-  genomic position information and cannot derive GLA automatically, so it
-  always uses the original (unshrunk) p1/p2 estimator; this path also
-  reorders and filters variants internally (sample/region overlap,
-  monomorphic removal), so a caller-supplied \code{gla}/\code{arm_id}
-  could not be reliably kept aligned. Call \code{\link{split_diploid}}
-  directly (no internal reordering) if you need GLA shrinkage with a
-  pre-computed \code{gla}/\code{arm_id} of your own.
+\section{Shrinkage}{
+ Both input paths split ambiguous mixed-ancestry
+  heterozygotes with the same shrinkage toward 1/2 as
+  \code{\link{ancestry_split}} (see its "Shrinkage toward 1/2" section).
+  The target is the same for every variant, so the direct
+  \code{gt_matrix}/\code{pt_matrix} path needs no position information.
+}
+
+\section{Matching variants to regions}{
+ Each variant (row of
+  \code{gt_matrix}) is paired with an ancestry column of \code{pt_matrix}
+  by, in order of preference: identical names; position, when rownames
+  look like \code{"chr:pos"} and colnames like \code{"chr:start-end"}
+  (the first region containing the variant; several variants may share a
+  region); or, when either matrix has no names, position in the matrix.
 }
 
 \examples{

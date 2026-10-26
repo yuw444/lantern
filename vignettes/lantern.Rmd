@@ -13,28 +13,42 @@ vignette: >
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+has_gmmat <- requireNamespace("GMMAT", quietly = TRUE) &&
+  requireNamespace("SeqVarTools", quietly = TRUE)
 ```
 
 # Introduction
 
-In admixed individuals, each stretch of the genome is inherited from one of
-several ancestral populations. A rare-variant burden test that pools all
-carriers can miss an effect that exists in only one ancestral background,
-or wrongly attribute one. **lantern** uses local ancestry to split each
-sample's alternate-allele dosage into per-ancestry dosages (e.g. African
-and European). It then runs gene-level `SMMAT` tests
-([GMMAT](https://cran.r-project.org/package=GMMAT)) separately for each
-ancestry and combines the per-ancestry p-values with the Cauchy combination
-test.
+People with recent ancestry from more than one population, such as African
+Americans, are called admixed. Along each of their chromosomes, some
+segments were inherited from African ancestors and others from European
+ancestors. Software such as RFMix can infer, for every segment and each of
+the two copies of a chromosome, which population it came from. This is
+called local ancestry.
 
-The workflow has three steps:
+Rare-variant association tests usually group the rare variants in a gene
+and test whether carrying them is associated with a trait. If a variant's
+effect depends on the genetic background it sits on, for example because
+it is tagged by different nearby variants in African and European
+haplotypes, pooling all carriers mixes carriers with and without the
+effect, and the test loses power.
 
-1. **Split** a phased VCF by local ancestry from an RFMix `.msp.tsv` file
-   with `ancestry_split()`.
-2. **Write** each ancestry's dosages to a `r Biocpkg("SeqArray")` GDS file
-   with `write_ancestry_gds()`.
-3. **Test** each gene in every ancestry and Cauchy-combine the results with
-   `ancestry_smmat()`.
+lantern uses local ancestry to split each person's count of alternate
+alleles (their dosage, 0, 1 or 2) into one dosage per ancestry. A
+heterozygote whose allele sits on an African haplotype contributes 1 to
+the African dosage and 0 to the European dosage. lantern then runs the
+gene-based SMMAT test from the GMMAT package separately for each ancestry,
+and combines the per-ancestry p-values for each gene into one p-value with
+the Cauchy combination test.
+
+The analysis has three steps, one function each:
+
+1. `ancestry_split()` reads a phased VCF and an RFMix local-ancestry file
+   and returns one dosage matrix per ancestry.
+2. `write_ancestry_gds()` saves each matrix as a `r Biocpkg("SeqArray")`
+   GDS file, the format GMMAT reads.
+3. `ancestry_smmat()` runs SMMAT on each GDS file and combines the
+   results.
 
 # Installation
 
@@ -44,46 +58,86 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("lantern")
 ```
 
+Step 3 also needs GMMAT (from CRAN) and SeqVarTools (from Bioconductor):
+
+```{r install-suggests, eval = FALSE}
+install.packages("GMMAT")
+BiocManager::install("SeqVarTools")
+```
+
 ```{r load}
 library(lantern)
 ```
 
-lantern reads VCFs with `bcftools` when it is on `PATH`, which is fastest
-and also reads BCF. Otherwise it falls back to `r Biocpkg("SeqArray")`, so
-no external tools are needed.
-
 # Example data
 
-The package ships a small simulated dataset: 60 admixed samples, 200 rare
-variants on chromosome 19, two ancestral populations (AFR, EUR) and 8 genes.
-The phenotype carries an effect that is driven only by African-ancestry
-alleles in `GENE2`.
+lantern includes a small simulated dataset: 60 admixed individuals, 200
+rare variants on chromosome 19 and eight genes. We simulated a continuous
+trait `y` that is raised by alternate alleles in `GENE2`, but only when the
+allele sits on an African haplotype. A good analysis should find `GENE2`
+in the African-ancestry test and not in the European one.
 
 ```{r files}
 ext <- system.file("extdata", package = "lantern")
-vcf <- file.path(ext, "toy.vcf.gz")     # phased genotypes
-msp <- file.path(ext, "toy.msp.tsv")    # RFMix local ancestry
-substr(readLines(msp, n = 3), 1, 70)
+vcf <- file.path(ext, "toy.vcf.gz")
+msp <- file.path(ext, "toy.msp.tsv")
+```
+
+The VCF holds phased genotypes. A `|` separates the two copies of the
+chromosome, so `0|1` means the alternate allele is on the second copy:
+
+```{r vcf}
+vcf_lines <- readLines(vcf)
+data_lines <- vcf_lines[!startsWith(vcf_lines, "##")]
+substr(data_lines[1:3], 1, 60)
+```
+
+The MSP file is RFMix's local-ancestry output. Its first line gives the
+population codes (here 0 = AFR and 1 = EUR). Each later row is a segment
+of the chromosome, with one ancestry call per sample and chromosome copy
+(columns `S001.0`, `S001.1`, ...):
+
+```{r msp}
+substr(readLines(msp, n = 4), 1, 70)
 ```
 
 # Step 1: split dosages by local ancestry
 
-`mode = "haplotype"` assigns each phased allele to the ancestry of its own
-haplotype, so it is exact. `mode = "dosage"` ignores phase: it splits
-ambiguous mixed-ancestry heterozygotes using population proportions
-estimated from the unambiguous carriers, shrunk toward each chromosome
-arm's global ancestry. See `vignette("split-intuition")` for the details.
+`ancestry_split()` matches samples between the two files, finds the
+ancestry segment that contains each variant, and splits the dosages.
 
 ```{r split}
 split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
                         verbose = FALSE)
-names(split)
-dim(split$AFR)
+```
+
+The result has one variants x samples dosage matrix per population, named
+after the populations in the MSP file:
+
+```{r split-show}
 split$AFR[1:4, 1:6]
 split$EUR[1:4, 1:6]
 ```
 
-The result also records which variants and samples were kept:
+Most entries are 0 because the variants are rare. `mode = "dosage"`
+ignores phase. For a heterozygote with one African and one European
+haplotype, the genotype alone does not say which haplotype carries the
+allele, so the allele is shared between the two ancestries, with shares
+estimated from the other carriers of the same variant. Here is the first
+such heterozygote in the data; its two shares add up to its one allele:
+
+```{r split-fraction}
+i <- which(split$AFR %% 1 > 0, arr.ind = TRUE)[1, ]
+c(AFR = split$AFR[i[1], i[2]], EUR = split$EUR[i[1], i[2]])
+```
+
+`vignette("split-intuition")` explains how the shares are calculated. With
+phased data you can instead use `mode = "haplotype"`, which assigns every
+allele to the ancestry of its own haplotype and never produces fractions.
+
+The result also lists the variants that were kept. Variants with no
+alternate allele in these samples are dropped
+(`r split$overlap$n_monomorphic_filtered` here):
 
 ```{r kept}
 head(split$variant_info)
@@ -92,25 +146,53 @@ split$overlap[c("n_common", "n_variants_kept", "n_monomorphic_filtered")]
 
 # Step 2: write per-ancestry GDS files
 
+GMMAT reads genotypes from GDS files, so each dosage matrix is saved to
+its own file. The function returns the file paths, named by population.
+
 ```{r gds}
 out_dir <- tempfile("lantern-")
 gds <- write_ancestry_gds(split, out_dir, verbose = FALSE)
 gds
 ```
 
-# Step 3: ancestry-stratified gene tests
+# Step 3: test each gene in each ancestry
 
-`ancestry_smmat()` fits the null model once with `GMMAT::glmmkin()`, then
-runs `GMMAT::SMMAT()` on each ancestry's GDS file. Gene-level weights for
-the Cauchy combination are the median per-variant carrier counts in each
-ancestry. The samples here are unrelated, so the kinship matrix is the
-identity.
+SMMAT needs three more inputs: a phenotype table, a kinship matrix and a
+gene-group file. The phenotype table has one row per sample, with the
+trait and covariates:
 
-```{r smmat, eval = requireNamespace("GMMAT", quietly = TRUE) && requireNamespace("SeqVarTools", quietly = TRUE)}
+```{r pheno}
 pheno <- read.delim(file.path(ext, "toy_pheno.tsv"))
+head(pheno, 3)
+```
+
+The kinship matrix describes how related the samples are. Our simulated
+samples are unrelated, so we use the identity matrix. In a real study this
+would be a genetic relatedness matrix:
+
+```{r kinship}
 kinship <- diag(nrow(pheno))
 dimnames(kinship) <- list(pheno$id, pheno$id)
+```
 
+The gene-group file assigns variants to genes. It has no header and six
+columns: gene, chromosome, position, reference allele, alternate allele
+and a weight. These are the 25 variants of `GENE2`:
+
+```{r genes}
+genes <- read.delim(file.path(ext, "toy_genes.tsv"), header = FALSE,
+                    col.names = c("gene", "chr", "pos", "ref", "alt", "weight"))
+head(genes[genes$gene == "GENE2", ])
+table(genes$gene)
+```
+
+`ancestry_smmat()` fits the null model (the trait explained by the
+covariates and relatedness, without genotypes) once, then runs SMMAT for
+each ancestry. Passing `ancestry_counts` and `variant_info` from Step 1
+weights the Cauchy combination by how many samples of each ancestry carry
+a gene's variants, so the ancestry with more data counts for more.
+
+```{r smmat, eval = has_gmmat}
 res <- ancestry_smmat(gds, pheno, y ~ age + sex, kinship,
                       gene_group_file = file.path(ext, "toy_genes.tsv"),
                       ancestry_counts = split$ancestry_counts,
@@ -119,9 +201,32 @@ res <- ancestry_smmat(gds, pheno, y ~ age + sex, kinship,
 res$results
 ```
 
-`GENE2` is strongly associated in the AFR test but not in the EUR test,
-which matches the simulated African-specific effect. A test that pools both
-ancestries would dilute that signal.
+The table has one row per gene: `p_AFR` and `p_EUR` are the SMMAT p-values
+from each ancestry, `w_AFR` and `w_EUR` the weights, and `p_cauchy` the
+combined p-value. `GENE2` stands out:
+
+```{r gene2, eval = has_gmmat}
+res$results[res$results$gene == "GENE2", ]
+```
+
+Its African-ancestry p-value is very small, its European-ancestry p-value
+is not, and the combined p-value keeps the signal. For comparison, we test
+the same genes without splitting by ancestry. Adding the two dosage
+matrices gives back each sample's total dosage:
+
+```{r pooled, eval = has_gmmat}
+pooled_gds <- file.path(out_dir, "pooled.gds")
+write_dosage_gds(split$AFR + split$EUR, split$variant_info,
+                 split$sample_ids, pooled_gds)
+pooled <- ancestry_smmat(c(POOLED = pooled_gds), pheno, y ~ age + sex,
+                         kinship, file.path(ext, "toy_genes.tsv"),
+                         verbose = FALSE)
+pooled$results[pooled$results$gene == "GENE2", c("gene", "p_POOLED")]
+```
+
+The pooled test also detects `GENE2`, with a p-value about three times
+larger: carriers whose allele sits on a European haplotype add to the
+pooled dosage without adding to the effect.
 
 ```{r cleanup, include = FALSE}
 unlink(out_dir, recursive = TRUE)
@@ -129,12 +234,12 @@ unlink(out_dir, recursive = TRUE)
 
 # Further reading
 
-- `vignette("split-intuition")`: what the split computes, on small
-  matrices, for two or more populations.
-- `vignette("toy-vcf-msp-example")`: the VCF and MSP input formats, with
-  four populations.
-- `vignette("real-data-chr19")`: a real-cohort analysis with binary,
-  continuous and count phenotypes.
+- `vignette("split-intuition")` works through the split on small
+  matrices, for two and for more populations.
+- `vignette("toy-vcf-msp-example")` shows the VCF and MSP formats in more
+  detail, including a four-population example.
+- `vignette("real-data-chr19")` analyses chromosome 19 in a real cohort
+  with binary, continuous and count traits.
 
 # Session information
 

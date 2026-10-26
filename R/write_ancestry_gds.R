@@ -40,19 +40,36 @@
 #'
 #' @export
 write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
-  if (!requireNamespace("SeqArray", quietly = TRUE))
-    stop("Package 'SeqArray' is required. Install with: BiocManager::install('SeqArray')")
-
-  n_var  <- nrow(dosage_mat)
-  n_samp <- ncol(dosage_mat)
-  if (n_var != nrow(variant_info))
+  .check_matrix(dosage_mat)
+  if (!is.data.frame(variant_info) ||
+      !all(c("chrom", "pos", "ref", "alt") %in% names(variant_info)))
+    stop("`variant_info` must be a data.frame with columns chrom, pos, ref, alt",
+         call. = FALSE)
+  if (!is.character(sample_ids) || anyNA(sample_ids))
+    stop("`sample_ids` must be a character vector", call. = FALSE)
+  .check_string(gds_path)
+  if (!dir.exists(dirname(gds_path)))
+    stop("Directory for `gds_path` does not exist: ", dirname(gds_path),
+         call. = FALSE)
+  if (nrow(dosage_mat) != nrow(variant_info))
     stop("nrow(dosage_mat) must equal nrow(variant_info)")
-  if (n_samp != length(sample_ids))
+  if (ncol(dosage_mat) != length(sample_ids))
     stop("ncol(dosage_mat) must equal length(sample_ids)")
 
+  # SeqArray has no direct matrix-to-GDS writer for dosages, so go through
+  # a temporary VCF with a DS FORMAT field.
   vcf_path <- paste0(tools::file_path_sans_ext(gds_path), "_tmp_ds.vcf")
   on.exit(unlink(vcf_path), add = TRUE)
+  writeLines(.dosage_vcf_lines(dosage_mat, variant_info, sample_ids), vcf_path)
+  SeqArray::seqVCF2GDS(vcf_path, gds_path, verbose = FALSE)
+  invisible(gds_path)
+}
 
+# VCF text (header + one line per variant) with a GT:DS FORMAT field: DS is
+# the dosage, GT its rounded hard call.
+.dosage_vcf_lines <- function(dosage_mat, variant_info, sample_ids) {
+  n_var  <- nrow(dosage_mat)
+  n_samp <- ncol(dosage_mat)
   header <- c(
     "##fileformat=VCFv4.2",
     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
@@ -63,34 +80,24 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
           collapse = "\t")
   )
 
-  # Vectorised field construction (avoids per-row sprintf loop)
   gt_map <- c("0/0", "0/1", "1/1")
   gt_idx <- matrix(pmin(2L, pmax(0L, as.integer(round(dosage_mat)))),
                    nrow = n_var, ncol = n_samp)
   gt_mat <- matrix(gt_map[gt_idx + 1L], nrow = n_var, ncol = n_samp)
 
-  # Use compact integer format when all values are 0/1/2; otherwise 4 d.p.
-  if (all(dosage_mat == floor(dosage_mat), na.rm = TRUE)) {
-    ds_mat <- matrix(as.character(as.integer(dosage_mat)), nrow = n_var, ncol = n_samp)
+  # Compact integers when all dosages are whole numbers; otherwise 4 d.p.
+  ds_mat <- if (all(dosage_mat == floor(dosage_mat), na.rm = TRUE)) {
+    matrix(as.character(as.integer(dosage_mat)), nrow = n_var, ncol = n_samp)
   } else {
-    ds_mat <- matrix(sprintf("%.4f", dosage_mat), nrow = n_var, ncol = n_samp)
+    matrix(sprintf("%.4f", dosage_mat), nrow = n_var, ncol = n_samp)
   }
-
   sfields <- matrix(paste0(gt_mat, ":", ds_mat), nrow = n_var, ncol = n_samp)
   if (anyNA(dosage_mat)) sfields[is.na(dosage_mat)] <- "./.:."
 
-  # Prefix columns (CHROM POS ID REF ALT QUAL FILTER INFO FORMAT)
-  pre <- cbind(variant_info$chrom,
-               as.character(variant_info$pos),
+  pre <- cbind(variant_info$chrom, as.character(variant_info$pos),
                ".", variant_info$ref, variant_info$alt,
                ".", "PASS", ".", "GT:DS")
-
-  # Combine and write in one shot
-  data_lines <- apply(cbind(pre, sfields), 1L, paste, collapse = "\t")
-  writeLines(c(header, data_lines), vcf_path)
-
-  SeqArray::seqVCF2GDS(vcf_path, gds_path, verbose = FALSE)
-  invisible(gds_path)
+  c(header, apply(cbind(pre, sfields), 1L, paste, collapse = "\t"))
 }
 
 # ============================================================================
@@ -134,29 +141,26 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
 #'
 #' @export
 write_ancestry_gds <- function(split_result, out_path, verbose = TRUE) {
-  if (!dir.exists(out_path)) dir.create(out_path, recursive = TRUE)
-
-  pop_names <- setdiff(names(split_result),
-                        c("variant_info", "sample_ids", "mode",
-                          "ancestry_counts", "tract_info", "overlap"))
+  if (!is.list(split_result) ||
+      !all(c("variant_info", "sample_ids") %in% names(split_result)))
+    stop("`split_result` must be a list as returned by ancestry_split(), with ",
+         "`variant_info` and `sample_ids`", call. = FALSE)
+  .check_string(out_path)
+  .check_flag(verbose)
+  pop_names <- .split_pop_names(split_result)
   if (length(pop_names) == 0)
     stop("split_result has no per-population dosage matrices to write")
-
-  variant_info <- split_result$variant_info
-  sample_ids   <- split_result$sample_ids
+  if (!dir.exists(out_path)) dir.create(out_path, recursive = TRUE)
 
   if (verbose) message("=== LANTERN Write Ancestry GDS (Step 2) ===\n")
 
-  gds_paths <- vector("list", length(pop_names))
-  names(gds_paths) <- pop_names
-  for (i in seq_along(pop_names)) {
-    pop <- pop_names[i]
+  gds_paths <- lapply(stats::setNames(seq_along(pop_names), pop_names), function(i) {
     if (verbose)
-      message("Writing GDS for ", pop, " (", i, "/", length(pop_names), ")...")
-    gds_path <- file.path(out_path, paste0(pop, ".gds"))
-    write_dosage_gds(split_result[[pop]], variant_info, sample_ids, gds_path)
-    gds_paths[[pop]] <- gds_path
-  }
+      message("Writing GDS for ", pop_names[i], " (", i, "/", length(pop_names), ")...")
+    gds_path <- file.path(out_path, paste0(pop_names[i], ".gds"))
+    write_dosage_gds(split_result[[pop_names[i]]], split_result$variant_info,
+                     split_result$sample_ids, gds_path)
+  })
 
   if (verbose)
     message("\n=== Step 2 Complete: ", length(pop_names),

@@ -9,7 +9,6 @@ ancestry_split(
   msp_path,
   mode = c("dosage", "haplotype"),
   chrom = NULL,
-  use_gla = TRUE,
   verbose = TRUE
 )
 }
@@ -39,17 +38,6 @@ name to use (whichever of \code{chrom}, with, or without a leading
 If the contig can't be resolved, all variants are queried and filtered
 in R instead (slower, more memory, same result).}
 
-\item{use_gla}{Logical, \code{mode = "dosage"} only. When \code{TRUE}
-(default), per-arm GLA (global local ancestry) shrinkage is computed
-and applied automatically (see the "Core Algorithm" section of the
-package's \code{CLAUDE.md} for the formula/rationale). When
-\code{FALSE}, GLA shrinkage is skipped entirely and the split
-reproduces the original pre-shrinkage p[k] estimator exactly,
-including its 0.5/0.5 singleton fallback -- equivalent to calling
-\code{\link{split_diploid_multi}} with \code{gla = NULL}. Ignored
-(no effect) when \code{mode = "haplotype"}, which is deterministic
-and has no ambiguous ratio to shrink.}
-
 \item{verbose}{Print step-by-step progress messages.}
 }
 \value{
@@ -77,6 +65,21 @@ matrices, with no file I/O. Pass the result to
 then to \code{\link{ancestry_smmat}} (Step 3) to run SMMAT + Cauchy
 combination.
 }
+\section{Shrinkage toward 1/2 (dosage mode)}{
+ A mixed-ancestry
+  heterozygote carries one haplotype from each of its two ancestries, so
+  which one holds the alt allele cannot be read off the genotype. Its
+  allele is split between the two ancestries in proportion to the
+  variant's unambiguous carriers (the raw ratio), shrunk toward 1/2 by
+  \eqn{w}, the share of the variant's alt-allele evidence that comes from
+  ambiguous heterozygotes:
+  \deqn{p = (1 - w)\, p_{raw} + w / 2.}
+  A variant carried only by ambiguous heterozygotes (\eqn{w = 1}) is
+  split 1/2 : 1/2. With K populations every pair is shrunk toward 1/2
+  in the same way. \code{mode = "haplotype"} is deterministic and
+  applies no shrinkage.
+}
+
 \examples{
 vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
 msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")

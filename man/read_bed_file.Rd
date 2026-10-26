@@ -4,16 +4,22 @@
 \alias{read_bed_file}
 \title{Read a PLINK .bed file of BED-encoded local ancestry calls}
 \usage{
-read_bed_file(bed, bim, fam)
+read_bed_file(
+  bed,
+  bim = sub("\\\\.bed$", ".bim", bed),
+  fam = sub("\\\\.bed$", ".fam", bed)
+)
 }
 \arguments{
 \item{bed}{Path to the \code{.bed} file.}
 
 \item{bim}{Path to the \code{.bim} file (variant IDs are taken from
-column 2).}
+column 2). Defaults to \code{bed} with its extension replaced by
+\code{.bim}, the usual PLINK file set layout.}
 
 \item{fam}{Path to the \code{.fam} file (sample IDs are taken from
-column 2, i.e. IID).}
+column 2, i.e. IID). Defaults to \code{bed} with its extension replaced
+by \code{.fam}.}
 }
 \value{
 Integer matrix (variants x samples), dimnamed from the
@@ -34,9 +40,8 @@ dependency.
 }
 \examples{
 ext <- system.file("extdata", package = "lantern")
-pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"),
-                    file.path(ext, "toy_ancestry.bim"),
-                    file.path(ext, "toy_ancestry.fam"))
+# .bim and .fam are found next to the .bed file
+pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"))
 pt[, 1:6]   # ancestry tracts x samples, codes 1/2/3
 
 }

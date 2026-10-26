@@ -19,7 +19,7 @@
 
 #' Normalize gla/arm_id into .Call-ready sentinels
 #'
-#' \code{gla = NULL} (either argument NULL) disables GLA shrinkage: an empty
+#' \code{gla = NULL} (either argument NULL) disables shrinkage: an empty
 #' matrix/vector signal the C side to reproduce the pre-shrinkage behavior
 #' exactly (see \code{ancestry.c}).
 #' @keywords internal
@@ -28,6 +28,38 @@
     return(list(gla = matrix(numeric(0), nrow = 0, ncol = 0), arm_id = integer(0)))
   storage.mode(gla) <- "double"
   list(gla = gla, arm_id = as.integer(arm_id))
+}
+
+# Checks for the optional shrinkage target of split_diploid()/
+# split_diploid_multi(): both or neither, one target row per arm_id value.
+.check_shrink_target <- function(gla, arm_id, n_variants, n_pops) {
+  if (is.null(gla) != is.null(arm_id))
+    stop("`gla` and `arm_id` must be supplied together", call. = FALSE)
+  if (is.null(gla)) return(invisible(NULL))
+  .check_matrix(gla, "gla")
+  if (ncol(gla) != n_pops)
+    stop("`gla` must have one column per population (", n_pops, ")",
+         call. = FALSE)
+  if (any(gla < 0, na.rm = TRUE) || anyNA(gla))
+    stop("`gla` must contain non-negative proportions", call. = FALSE)
+  if (length(arm_id) != n_variants || anyNA(arm_id) ||
+      any(arm_id < 0 | arm_id >= nrow(gla)))
+    stop("`arm_id` must have one 0-based row index into `gla` per variant ",
+         "(length ", n_variants, ", values 0 to ", nrow(gla) - 1L, ")",
+         call. = FALSE)
+  invisible(NULL)
+}
+
+#' Uniform shrinkage target: 1/K for each of K populations
+#'
+#' One-row target matrix for \code{split_diploid()} /
+#' \code{split_diploid_multi()}'s \code{gla} argument (use with an all-zero
+#' \code{arm_id}). For every ambiguous pair the C code shrinks toward the
+#' pair's target share \code{t_a / (t_a + t_b)}, which is exactly 1/2 here.
+#' @keywords internal
+.uniform_shrink_target <- function(pop_names) {
+  matrix(1 / length(pop_names), nrow = 1L, ncol = length(pop_names),
+         dimnames = list("all", pop_names))
 }
 
 .split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
@@ -102,17 +134,23 @@ count_ancestry_codes <- function(mat, code) {
 #' result$african
 #' result$european
 #'
-#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns population
-#'   names) of per-arm global local ancestry proportions, as produced by
-#'   \code{\link{ancestry_split}} internally. When \code{NULL} (default),
-#'   GLA shrinkage is disabled and behavior matches the original p1/p2
-#'   estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param gla Optional shrinkage target: numeric matrix with one row per
+#'   target group and two columns (AFR, EUR) of target proportions. A mixed
+#'   heterozygote's split is shrunk toward its row's AFR share by the
+#'   ambiguous share \eqn{w} of the variant's evidence.
+#'   \code{\link{ancestry_split}} uses a single row of 1/2. When \code{NULL}
+#'   (default), no shrinkage: the raw p1/p2 ratio is used, with a 0.5/0.5
+#'   fallback only when every carrier is ambiguous.
 #' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
-#'   giving each variant's row index into \code{gla} (0-based). Required
-#'   together with \code{gla}.
+#'   giving each variant's row index into \code{gla} (0-based; all zeros for
+#'   a one-row target). Required together with \code{gla}.
 #'
 #' @export
 split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
+    .check_matrix(gt_genotype, values = 0:2)
+    .check_matrix(ancestry)   # unrecognised codes are allowed: they contribute nothing
+    .check_same_dim(gt_genotype, ancestry)
+    .check_shrink_target(gla, arm_id, nrow(gt_genotype), 2L)
     .split_diploid(gt_genotype, ancestry, gla, arm_id)
 }
 
@@ -133,7 +171,9 @@ split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
 #'   same dimensions as \code{gt_genotype}.
 #' @param pure_codes Named integer vector mapping each population label to its
 #'   pure-ancestry diploid code.
-#'   Example: \code{c(AFR = 3L, EUR = 1L, NAT = 4L)}.
+#'   Example: \code{c(AFR = 3L, EUR = 1L, NAT = 4L)}. The default is the
+#'   two-population coding used by \code{\link{split_diploid}}
+#'   (3 = AFR/AFR, 1 = EUR/EUR).
 #' @param mixed_codes Data frame with three columns:
 #'   \describe{
 #'     \item{code}{Integer ancestry code for this mixed pair.}
@@ -142,7 +182,10 @@ split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
 #'     \item{pop2}{Character name of the second parent population
 #'       (must be a name in \code{pure_codes}).}
 #'   }
-#'   One row per mixed-ancestry diploid type.
+#'   One row per mixed-ancestry diploid type. The default is the
+#'   two-population mixed code 2 = AFR/EUR, so with both defaults
+#'   \code{split_diploid_multi(gt, ancestry)} matches
+#'   \code{split_diploid(gt, ancestry)}.
 #'   Example for 3 populations:
 #'   \code{data.frame(code=c(2L,5L,6L), pop1=c("AFR","AFR","EUR"), pop2=c("EUR","NAT","NAT"))}
 #'
@@ -170,21 +213,29 @@ split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
 #' out <- split_diploid_multi(gt, anc, pure, mixed)
 #' names(out)   # "AFR" "EUR" "NAT"
 #'
-#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns matching
-#'   \code{names(pure_codes)}) of per-arm global local ancestry proportions,
-#'   as produced by \code{\link{ancestry_split}} internally. When \code{NULL}
-#'   (default), GLA shrinkage is disabled and behavior matches the original
-#'   p[k] estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param gla Optional shrinkage target: numeric matrix with one row per
+#'   target group and columns matching \code{names(pure_codes)}. Each
+#'   ambiguous pair (a, b) is shrunk toward \eqn{t_a / (t_a + t_b)} by the
+#'   pair's ambiguous share \eqn{w} of the evidence.
+#'   \code{\link{ancestry_split}} uses a single row of 1/K (i.e. 1/2 for
+#'   every pair). When \code{NULL} (default), no shrinkage: the raw p[k]
+#'   ratio is used, with a 0.5/0.5 fallback only when a pair has no
+#'   unambiguous evidence.
 #' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
-#'   giving each variant's row index into \code{gla} (0-based). Required
-#'   together with \code{gla}.
+#'   giving each variant's row index into \code{gla} (0-based; all zeros for
+#'   a one-row target). Required together with \code{gla}.
 #'
 #' @export
 split_diploid_multi <- function(gt_genotype, ancestry,
-                                     pure_codes, mixed_codes,
-                                     gla = NULL, arm_id = NULL) {
-    if (is.null(names(pure_codes)))
-        stop("pure_codes must be a named integer vector, e.g. c(AFR=3L, EUR=1L)")
+                                pure_codes = c(AFR = 3L, EUR = 1L),
+                                mixed_codes = data.frame(code = 2L,
+                                                         pop1 = "AFR",
+                                                         pop2 = "EUR"),
+                                gla = NULL, arm_id = NULL) {
+    .check_matrix(gt_genotype, values = 0:2)
+    .check_matrix(ancestry)
+    .check_same_dim(gt_genotype, ancestry)
+    .check_codes(pure_codes)
     if (!is.data.frame(mixed_codes) ||
         !all(c("code", "pop1", "pop2") %in% names(mixed_codes)))
         stop("mixed_codes must be a data.frame with columns: code, pop1, pop2")
@@ -192,10 +243,11 @@ split_diploid_multi <- function(gt_genotype, ancestry,
     bad <- setdiff(c(mixed_codes$pop1, mixed_codes$pop2), pop_names)
     if (length(bad))
         stop("mixed_codes references populations not in pure_codes: ",
-             paste(bad, collapse = ", "))
+             toString(bad))
     if (!is.null(gla) && !identical(colnames(gla), pop_names))
         stop("gla's columns must match names(pure_codes) exactly, in order: ",
-             paste(pop_names, collapse = ", "))
+             toString(pop_names))
+    .check_shrink_target(gla, arm_id, nrow(gt_genotype), length(pop_names))
 
     storage.mode(gt_genotype) <- "integer"
     storage.mode(ancestry)    <- "integer"
@@ -244,6 +296,11 @@ split_diploid_multi <- function(gt_genotype, ancestry,
 #' @export
 split_haplotype <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                          pop_codes = c(AFR = 0L, EUR = 1L)) {
+    .check_haplotype_inputs(gt_hap0, gt_hap1, anc_hap0, anc_hap1)
+    .check_codes(pop_codes, min_length = 2L)
+    if (length(pop_codes) != 2L)
+        stop("`pop_codes` must have exactly 2 populations; use ",
+             "split_haplotype_multi() for more", call. = FALSE)
     .split_haplotype(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
 }
 
@@ -286,10 +343,8 @@ split_haplotype <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #' @export
 split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                                 pop_codes = c(AFR = 0L, EUR = 1L)) {
-    if (is.null(names(pop_codes)))
-        stop("pop_codes must be a named integer vector, e.g. c(AFR=0L, EUR=1L, NAT=2L)")
-    if (length(pop_codes) < 2L)
-        stop("pop_codes must contain at least 2 populations")
+    .check_haplotype_inputs(gt_hap0, gt_hap1, anc_hap0, anc_hap1)
+    .check_codes(pop_codes, min_length = 2L)
     pop_names <- names(pop_codes)
     storage.mode(gt_hap0)  <- "integer"
     storage.mode(gt_hap1)  <- "integer"
@@ -300,6 +355,17 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                     pop_codes, PACKAGE = "lantern")
     names(result) <- pop_names             # guarantee names even if C skips them
     result
+}
+
+.check_haplotype_inputs <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1) {
+    .check_matrix(gt_hap0, values = 0:1)
+    .check_matrix(gt_hap1, values = 0:1)
+    .check_matrix(anc_hap0)
+    .check_matrix(anc_hap1)
+    .check_same_dim(gt_hap0, gt_hap1)
+    .check_same_dim(gt_hap0, anc_hap0)
+    .check_same_dim(gt_hap0, anc_hap1)
+    invisible(NULL)
 }
 
 # ============================================================================
@@ -321,9 +387,11 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'
 #' @param bed Path to the \code{.bed} file.
 #' @param bim Path to the \code{.bim} file (variant IDs are taken from
-#'   column 2).
+#'   column 2). Defaults to \code{bed} with its extension replaced by
+#'   \code{.bim}, the usual PLINK file set layout.
 #' @param fam Path to the \code{.fam} file (sample IDs are taken from
-#'   column 2, i.e. IID).
+#'   column 2, i.e. IID). Defaults to \code{bed} with its extension replaced
+#'   by \code{.fam}.
 #'
 #' @return Integer matrix (variants x samples), dimnamed from the
 #'   \code{.bim}/\code{.fam} files. Values: 0 = no call, 1 = homozygous
@@ -333,13 +401,16 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'
 #' @examples
 #' ext <- system.file("extdata", package = "lantern")
-#' pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"),
-#'                     file.path(ext, "toy_ancestry.bim"),
-#'                     file.path(ext, "toy_ancestry.fam"))
+#' # .bim and .fam are found next to the .bed file
+#' pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"))
 #' pt[, 1:6]   # ancestry tracts x samples, codes 1/2/3
 #'
 #' @export
-read_bed_file <- function(bed, bim, fam) {
+read_bed_file <- function(bed, bim = sub("\\.bed$", ".bim", bed),
+                          fam = sub("\\.bed$", ".fam", bed)) {
+  .check_file(bed)
+  .check_file(bim)
+  .check_file(fam)
   bim_dt <- data.table::fread(bim, header = FALSE)
   fam_dt <- data.table::fread(fam, header = FALSE)
   variant_ids <- as.character(bim_dt[[2]])
@@ -375,33 +446,18 @@ read_bed_file <- function(bed, bim, fam) {
   con <- if (grepl("\\.gz$", msp_path)) gzfile(msp_path, "rt") else file(msp_path, "r")
   on.exit(close(con))
 
-  line1 <- readLines(con, n = 1)
-  line1 <- sub("^#Subpopulation order/codes:\\s*", "", line1)
-  code_parts <- strsplit(line1, if (grepl("\t", line1)) "\t" else "\\s+")[[1]]
-  pop_codes <- integer()
-  for (part in code_parts) {
-    m <- regmatches(part, regexec("([A-Za-z0-9_]+)\\s*=\\s*([0-9]+)", part))[[1]]
-    if (length(m) == 3) pop_codes[m[2]] <- as.integer(m[3])
-  }
-  if (length(pop_codes) == 0) {
-    warning("Could not parse pop codes from MSP; using default AFR=0, EUR=1")
-    pop_codes <- c(AFR = 0L, EUR = 1L)
-  }
-
-  line2      <- readLines(con, n = 1)
-  headers    <- strsplit(line2, "\t")[[1]]
-  sample_hap_cols <- headers[7:length(headers)]
-  sample_ids <- unique(sub("\\.[01]$", "", sample_hap_cols))
+  pop_codes  <- .parse_msp_pop_codes(readLines(con, n = 1))
+  headers    <- strsplit(readLines(con, n = 1), "\t")[[1]]
+  sample_ids <- unique(sub("\\.[01]$", "", headers[7:length(headers)]))
 
   if (verbose) {
     message("    Found ", length(sample_ids), " samples, ", length(pop_codes), " populations")
-    message("    Pop codes: ", paste(names(pop_codes), "=", pop_codes, collapse = ", "))
+    message("    Pop codes: ", toString(sprintf("%s = %d", names(pop_codes), pop_codes)))
   }
 
   data_lines <- readLines(con)
   if (length(data_lines) == 0) stop("MSP file has no data rows")
-
-  data_mat <- do.call(rbind, lapply(data_lines, function(l) strsplit(l, "\t")[[1]]))
+  data_mat <- do.call(rbind, strsplit(data_lines, "\t", fixed = TRUE))
 
   tract_df <- data.frame(
     chrom = data_mat[, 1],
@@ -413,28 +469,37 @@ read_bed_file <- function(bed, bim, fam) {
   tract_df    <- tract_df[tract_order, ]
   rownames(tract_df) <- NULL
 
-  # Ancestry columns start at column 7 in data rows (6 metadata fields: chm spos epos sgpos egpos "n snps")
-  anc_values   <- data_mat[, 7:ncol(data_mat), drop = FALSE]
-  n_tracts_orig <- nrow(tract_df)
-  n_samples     <- length(sample_ids)
-
-  anc_hap0_mat <- matrix(0L, nrow = n_samples, ncol = n_tracts_orig)
-  anc_hap1_mat <- matrix(0L, nrow = n_samples, ncol = n_tracts_orig)
+  # Data rows: 6 metadata fields (chm spos epos sgpos egpos "n snps"), then
+  # one ancestry call per haplotype, ordered sample1.0, sample1.1, ...
+  n_samples <- length(sample_ids)
+  anc <- data_mat[tract_order, 6L + seq_len(2L * n_samples), drop = FALSE]
+  storage.mode(anc) <- "integer"
+  hap0 <- seq(1L, by = 2L, length.out = n_samples)
+  anc_hap0_mat <- t(anc[, hap0, drop = FALSE])
+  anc_hap1_mat <- t(anc[, hap0 + 1L, drop = FALSE])
   rownames(anc_hap0_mat) <- rownames(anc_hap1_mat) <- sample_ids
-
-  for (j in seq_len(n_tracts_orig)) {
-    vals <- anc_values[tract_order[j], ]
-    for (s in seq_len(n_samples)) {
-      anc_hap0_mat[s, j] <- as.integer(vals[2 * s - 1])
-      anc_hap1_mat[s, j] <- as.integer(vals[2 * s])
-    }
-  }
 
   list(pop_codes  = pop_codes,
        sample_ids = sample_ids,
        tract_df   = tract_df,
        anc_hap0   = anc_hap0_mat,
        anc_hap1   = anc_hap1_mat)
+}
+
+# Population codes from an MSP file's first line, e.g.
+# "#Subpopulation order/codes: AFR=0\tEUR=1" -> c(AFR = 0L, EUR = 1L).
+.parse_msp_pop_codes <- function(line1) {
+  line1 <- sub("^#Subpopulation order/codes:\\s*", "", line1)
+  parts <- strsplit(line1, if (grepl("\t", line1)) "\t" else "\\s+")[[1]]
+  m     <- regmatches(parts, regexec("([A-Za-z0-9_]+)\\s*=\\s*([0-9]+)", parts))
+  m     <- m[lengths(m) == 3L]
+  if (length(m) == 0) {
+    warning("Could not parse pop codes from MSP; using default AFR=0, EUR=1")
+    return(c(AFR = 0L, EUR = 1L))
+  }
+  codes <- stats::setNames(as.integer(vapply(m, `[`, "", 3L)),
+                           vapply(m, `[`, "", 2L))
+  codes[!duplicated(names(codes), fromLast = TRUE)]
 }
 
 #' Parse phased GT matrix into haplotype integer matrices (vectorised)
@@ -628,32 +693,35 @@ read_bed_file <- function(bed, bim, fam) {
   alt <- SeqArray::seqGetData(gds, "$alt")
   alt[alt == ""] <- "."   # bcftools prints a missing ALT as "."
 
-  # genotype: ploidy x sample x variant allele indices (NA = missing);
-  # phase: sample x variant, 1 = phased ("|"), 0 = unphased ("/").
-  geno  <- SeqArray::seqGetData(gds, "genotype")
-  geno  <- array(geno, dim = c(length(geno) / (n_samples * n_variants),
-                               n_samples, n_variants))
-  allele_str <- function(a) {
-    s <- as.character(a)
-    s[is.na(a)] <- "."
-    s
-  }
-  if (dim(geno)[1] == 1) {
-    gt <- allele_str(geno[1, , ])
-  } else {
-    phase <- SeqArray::seqGetData(gds, "phase")
-    gt <- paste0(allele_str(geno[1, , ]),
-                 ifelse(as.vector(phase) == 1, "|", "/"),
-                 allele_str(geno[2, , ]))
-  }
-  gt <- t(matrix(gt, nrow = n_samples, ncol = n_variants))
+  gt <- .gds_gt_strings(gds, n_samples, n_variants)
   colnames(gt) <- sample_ids
-
   list(chrom = vcf_chrom,
        pos   = SeqArray::seqGetData(gds, "position"),
        ref   = SeqArray::seqGetData(gds, "$ref"),
        alt   = alt,
        gt    = gt)
+}
+
+# Variants x samples matrix of GT strings, as bcftools prints them, from an
+# open GDS. genotype: ploidy x sample x variant allele indices (NA =
+# missing); phase: sample x variant, 1 = phased ("|"), 0 = unphased ("/").
+.gds_gt_strings <- function(gds, n_samples, n_variants) {
+  geno <- SeqArray::seqGetData(gds, "genotype")
+  geno <- array(geno, dim = c(length(geno) / (n_samples * n_variants),
+                              n_samples, n_variants))
+  allele_str <- function(a) {
+    s <- as.character(a)
+    s[is.na(a)] <- "."
+    s
+  }
+  gt <- if (dim(geno)[1] == 1) {
+    allele_str(geno[1, , ])
+  } else {
+    paste0(allele_str(geno[1, , ]),
+           ifelse(as.vector(SeqArray::seqGetData(gds, "phase")) == 1, "|", "/"),
+           allele_str(geno[2, , ]))
+  }
+  t(matrix(gt, nrow = n_samples, ncol = n_variants))
 }
 
 #' Parse an MSP file and a phased VCF into haplotype/ancestry matrices
@@ -668,31 +736,9 @@ read_bed_file <- function(bed, bim, fam) {
 
   # ---- Step 1: Parse MSP ----
   if (verbose) message("Step 1: Parsing RFMix MSP file...")
-  msp_data     <- .parse_msp(msp_path, verbose = verbose)
-  msp_samples  <- msp_data$sample_ids
-  tract_df     <- msp_data$tract_df
-  anc_hap0_mat <- msp_data$anc_hap0
-  anc_hap1_mat <- msp_data$anc_hap1
-  pop_codes    <- msp_data$pop_codes
-
-  # Restrict tracts to the requested chromosome up front. Besides avoiding
-  # wasted work on other chromosomes' tracts, this fixes a correctness gap:
-  # without it, a multi-chromosome MSP file's tract_df is sorted by spos
-  # alone (chromosome-agnostic), so findInterval() below could match a
-  # variant to the wrong chromosome's tract purely by position overlap.
-  if (!is.null(chrom)) {
-    chrom_clean <- sub("^chr", "", chrom)
-    tract_keep  <- sub("^chr", "", tract_df$chrom) == chrom_clean
-    if (!any(tract_keep))
-      stop("No ancestry tracts on chromosome ", chrom, " in MSP file")
-    tract_df     <- tract_df[tract_keep, , drop = FALSE]
-    anc_hap0_mat <- anc_hap0_mat[, tract_keep, drop = FALSE]
-    anc_hap1_mat <- anc_hap1_mat[, tract_keep, drop = FALSE]
-    rownames(tract_df) <- NULL
-  }
-  n_tracts <- nrow(tract_df)
-  if (verbose) message("  MSP samples: ", length(msp_samples),
-                       "  Tracts: ", n_tracts,
+  msp <- .restrict_tracts(.parse_msp(msp_path, verbose = verbose), chrom)
+  if (verbose) message("  MSP samples: ", length(msp$sample_ids),
+                       "  Tracts: ", nrow(msp$tract_df),
                        if (!is.null(chrom)) c(" (chr ", chrom, " only)"))
 
   # ---- Step 2: VCF sample IDs ----
@@ -705,126 +751,129 @@ read_bed_file <- function(bed, bim, fam) {
 
   # ---- Step 3: Intersect samples ----
   if (verbose) message("\nStep 3: Intersecting samples...")
-  common_samples <- intersect(vcf_samples, msp_samples)
+  common_samples <- intersect(vcf_samples, msp$sample_ids)
   if (length(common_samples) == 0)
     stop("No common samples between VCF and MSP")
-  dropped_vcf <- setdiff(vcf_samples, common_samples)
-  dropped_msp <- setdiff(msp_samples, common_samples)
   if (verbose) message("  Common: ", length(common_samples))
-
-  anc_hap0_common <- anc_hap0_mat[common_samples, , drop = FALSE]
-  anc_hap1_common <- anc_hap1_mat[common_samples, , drop = FALSE]
 
   # ---- Step 4: Parse VCF GT ----
   if (verbose) message("\nStep 4: Parsing VCF genotypes...")
-  vcf <- .vcf_read_gt(vcf_path, chrom, reader, verbose = verbose)
-  vcf_chrom <- vcf$chrom
-  vcf_pos   <- vcf$pos
-  vcf_ref   <- vcf$ref
-  vcf_alt   <- vcf$alt
-
-  is_biallelic <- !grepl(",", vcf_alt, fixed = TRUE)
-  n_multi <- sum(!is_biallelic)
-  if (n_multi > 0) {
-    if (verbose) message("  Skipping ", n_multi, " multiallelic variants")
-    vcf_chrom <- vcf_chrom[is_biallelic]; vcf_pos <- vcf_pos[is_biallelic]
-    vcf_ref   <- vcf_ref[is_biallelic];   vcf_alt <- vcf_alt[is_biallelic]
-  }
-  n_variants <- length(vcf_pos)
-
-  sample_idx <- match(common_samples, vcf_samples)
-  gt_mat     <- vcf$gt[is_biallelic, sample_idx, drop = FALSE]
-
-  gt_parsed  <- .parse_phased_gt_matrix(gt_mat, n_variants,
-                                         length(common_samples),
-                                         common_samples, verbose = verbose)
-  gt_hap0_mat <- gt_parsed$hap0
-  gt_hap1_mat <- gt_parsed$hap1
-
-  n_missing <- sum(gt_parsed$missing)
-  if (n_missing > 0 && verbose)
-    message("  Missing GT: ", n_missing, " (treated as 0/0)")
+  geno <- .read_vcf_haplotypes(vcf_path, chrom, reader,
+                               match(common_samples, vcf_samples),
+                               common_samples, verbose)
 
   # ---- Step 5: Map variants to tracts ----
   if (verbose) message("\nStep 5: Mapping variants to ancestry tracts...")
-  vcf_chrom_clean   <- sub("^chr", "", vcf_chrom)
-  tract_chrom_clean <- sub("^chr", "", tract_df$chrom)
-
-  if (!is.null(chrom)) {
-    chrom_clean <- sub("^chr", "", chrom)
-    keep <- vcf_chrom_clean == chrom_clean
-    if (!any(keep)) stop("No variants on chromosome ", chrom)
-    vcf_chrom <- vcf_chrom[keep]; vcf_pos <- vcf_pos[keep]
-    vcf_ref   <- vcf_ref[keep];   vcf_alt <- vcf_alt[keep]
-    gt_hap0_mat <- gt_hap0_mat[keep, , drop = FALSE]
-    gt_hap1_mat <- gt_hap1_mat[keep, , drop = FALSE]
-    vcf_chrom_clean <- vcf_chrom_clean[keep]
-    n_variants <- sum(keep)
-    if (verbose) message("  Filtered to chrom ", chrom, ": ", n_variants, " variants")
-  }
-
-  tract_idx   <- findInterval(vcf_pos, tract_df$spos)
-  valid_tract <- tract_idx > 0
-  if (any(valid_tract))
-    valid_tract[valid_tract] <-
-      vcf_pos[valid_tract] <= tract_df$epos[tract_idx[valid_tract]]
-  # tract_df is already restricted to `chrom` (Step 1) whenever chrom is
-  # supplied, so this check is cheap and always correct either way -- no
-  # special-cased shortcut needed.
-  valid_chrom <- vapply(seq_along(tract_idx), function(i) {
-    tract_idx[i] > 0 &&
-      vcf_chrom_clean[i] == tract_chrom_clean[tract_idx[i]]
-  }, logical(1))
-  keep_var <- valid_tract & valid_chrom
-  n_no_tract <- sum(!keep_var)
-  if (n_no_tract > 0 && verbose)
-    message("  Variants with no tract: ", n_no_tract, " (dropped)")
-
-  if (n_no_tract > 0) {
-    vcf_chrom   <- vcf_chrom[keep_var]; vcf_pos <- vcf_pos[keep_var]
-    vcf_ref     <- vcf_ref[keep_var];   vcf_alt <- vcf_alt[keep_var]
-    gt_hap0_mat <- gt_hap0_mat[keep_var, , drop = FALSE]
-    gt_hap1_mat <- gt_hap1_mat[keep_var, , drop = FALSE]
-    tract_idx   <- tract_idx[keep_var]
-    n_variants  <- sum(keep_var)
-  }
-  if (n_variants == 0) stop("No variants with valid ancestry tracts")
+  geno <- .map_variants_to_tracts(geno, msp$tract_df, chrom, verbose)
 
   # ---- Step 6: Broadcast tract ancestry to variants ----
+  # Each variant takes its tract's per-sample ancestry calls.
   if (verbose) message("\nStep 6: Broadcasting ancestry to variants...")
-  anc_hap0_var <- matrix(0L, nrow = n_variants, ncol = length(common_samples))
-  anc_hap1_var <- matrix(0L, nrow = n_variants, ncol = length(common_samples))
-  for (i in seq_len(n_variants)) {
-    t <- tract_idx[i]
-    anc_hap0_var[i, ] <- anc_hap0_common[, t]
-    anc_hap1_var[i, ] <- anc_hap1_common[, t]
-  }
-
-  variant_info <- data.frame(chrom = vcf_chrom, pos = vcf_pos,
-                              ref = vcf_ref, alt = vcf_alt,
-                              stringsAsFactors = FALSE)
+  anc_hap0_common <- msp$anc_hap0[common_samples, , drop = FALSE]
+  anc_hap1_common <- msp$anc_hap1[common_samples, , drop = FALSE]
 
   list(
-    gt_hap0_mat     = gt_hap0_mat,
-    gt_hap1_mat     = gt_hap1_mat,
-    anc_hap0_var    = anc_hap0_var,
-    anc_hap1_var    = anc_hap1_var,
+    gt_hap0_mat     = geno$hap0,
+    gt_hap1_mat     = geno$hap1,
+    anc_hap0_var    = unname(t(anc_hap0_common[, geno$tract_idx, drop = FALSE])),
+    anc_hap1_var    = unname(t(anc_hap1_common[, geno$tract_idx, drop = FALSE])),
     anc_hap0_tract  = anc_hap0_common,
     anc_hap1_tract  = anc_hap1_common,
-    variant_info    = variant_info,
+    variant_info    = data.frame(chrom = geno$chrom, pos = geno$pos,
+                                 ref = geno$ref, alt = geno$alt,
+                                 stringsAsFactors = FALSE),
     common_samples  = common_samples,
-    pop_codes       = pop_codes,
-    tract_df        = tract_df,
+    pop_codes       = msp$pop_codes,
+    tract_df        = msp$tract_df,
     overlap = list(
       n_vcf_samples           = length(vcf_samples),
-      n_msp_samples           = length(msp_samples),
+      n_msp_samples           = length(msp$sample_ids),
       n_common                = length(common_samples),
-      n_multiallelic_filtered = n_multi,
-      n_no_tract              = n_no_tract,
-      dropped_samples_vcf     = dropped_vcf,
-      dropped_samples_msp     = dropped_msp
+      n_multiallelic_filtered = geno$n_multi,
+      n_no_tract              = geno$n_no_tract,
+      dropped_samples_vcf     = setdiff(vcf_samples, common_samples),
+      dropped_samples_msp     = setdiff(msp$sample_ids, common_samples)
     )
   )
+}
+
+# Keep only `chrom`'s tracts (all tracts when chrom is NULL). Besides saving
+# work, this matters for correctness: tract_df is sorted by position alone,
+# so with several chromosomes findInterval() could otherwise match a variant
+# to another chromosome's tract that overlaps it in position.
+.restrict_tracts <- function(msp, chrom) {
+  if (is.null(chrom)) return(msp)
+  keep <- sub("^chr", "", msp$tract_df$chrom) == sub("^chr", "", chrom)
+  if (!any(keep))
+    stop("No ancestry tracts on chromosome ", chrom, " in MSP file")
+  msp$tract_df <- msp$tract_df[keep, , drop = FALSE]
+  rownames(msp$tract_df) <- NULL
+  msp$anc_hap0 <- msp$anc_hap0[, keep, drop = FALSE]
+  msp$anc_hap1 <- msp$anc_hap1[, keep, drop = FALSE]
+  msp
+}
+
+# Read the VCF's biallelic variants as haplotype allele matrices (variants x
+# common samples), dropping multiallelic sites.
+.read_vcf_haplotypes <- function(vcf_path, chrom, reader, sample_idx,
+                                 common_samples, verbose) {
+  vcf <- .vcf_read_gt(vcf_path, chrom, reader, verbose = verbose)
+  biallelic <- !grepl(",", vcf$alt, fixed = TRUE)
+  n_multi   <- sum(!biallelic)
+  if (n_multi > 0 && verbose)
+    message("  Skipping ", n_multi, " multiallelic variants")
+
+  gt <- .parse_phased_gt_matrix(vcf$gt[biallelic, sample_idx, drop = FALSE],
+                                sum(biallelic), length(common_samples),
+                                common_samples, verbose = verbose)
+  n_missing <- sum(gt$missing)
+  if (n_missing > 0 && verbose)
+    message("  Missing GT: ", n_missing, " (treated as 0/0)")
+
+  list(chrom = vcf$chrom[biallelic], pos = vcf$pos[biallelic],
+       ref = vcf$ref[biallelic], alt = vcf$alt[biallelic],
+       hap0 = gt$hap0, hap1 = gt$hap1, n_multi = n_multi)
+}
+
+# Subset the per-variant fields and haplotype rows of .read_vcf_haplotypes()
+# output.
+.subset_variants <- function(geno, keep) {
+  fields <- intersect(c("chrom", "pos", "ref", "alt", "tract_idx"), names(geno))
+  geno[fields] <- lapply(geno[fields], `[`, keep)
+  geno$hap0 <- geno$hap0[keep, , drop = FALSE]
+  geno$hap1 <- geno$hap1[keep, , drop = FALSE]
+  geno
+}
+
+# Find each variant's ancestry tract (adds `tract_idx`, a row of tract_df)
+# and drop variants that are off `chrom` or fall outside every tract.
+.map_variants_to_tracts <- function(geno, tract_df, chrom, verbose) {
+  vcf_chrom <- sub("^chr", "", geno$chrom)
+  if (!is.null(chrom)) {
+    keep <- vcf_chrom == sub("^chr", "", chrom)
+    if (!any(keep)) stop("No variants on chromosome ", chrom)
+    geno      <- .subset_variants(geno, keep)
+    vcf_chrom <- vcf_chrom[keep]
+    if (verbose) message("  Filtered to chrom ", chrom, ": ", sum(keep), " variants")
+  }
+
+  # Last tract starting at or before the variant; valid if the variant is
+  # also before that tract's end and on the same chromosome.
+  tract_idx <- findInterval(geno$pos, tract_df$spos)
+  hit       <- ifelse(tract_idx > 0L, tract_idx, NA_integer_)
+  in_tract  <- !is.na(hit) &
+    geno$pos <= tract_df$epos[hit] &
+    vcf_chrom == sub("^chr", "", tract_df$chrom)[hit]
+  in_tract[is.na(in_tract)] <- FALSE
+
+  geno$tract_idx  <- tract_idx
+  geno$n_no_tract <- sum(!in_tract)
+  if (geno$n_no_tract > 0) {
+    if (verbose) message("  Variants with no tract: ", geno$n_no_tract, " (dropped)")
+    geno <- .subset_variants(geno, in_tract)
+  }
+  if (length(geno$pos) == 0) stop("No variants with valid ancestry tracts")
+  geno
 }
 
 # ============================================================================
@@ -864,17 +913,20 @@ read_bed_file <- function(bed, bim, fam) {
 #'   "chr" matches) -- other chromosomes' genotypes are never read into R.
 #'   If the contig can't be resolved, all variants are queried and filtered
 #'   in R instead (slower, more memory, same result).
-#' @param use_gla Logical, \code{mode = "dosage"} only. When \code{TRUE}
-#'   (default), per-arm GLA (global local ancestry) shrinkage is computed
-#'   and applied automatically (see the "Core Algorithm" section of the
-#'   package's \code{CLAUDE.md} for the formula/rationale). When
-#'   \code{FALSE}, GLA shrinkage is skipped entirely and the split
-#'   reproduces the original pre-shrinkage p[k] estimator exactly,
-#'   including its 0.5/0.5 singleton fallback -- equivalent to calling
-#'   \code{\link{split_diploid_multi}} with \code{gla = NULL}. Ignored
-#'   (no effect) when \code{mode = "haplotype"}, which is deterministic
-#'   and has no ambiguous ratio to shrink.
 #' @param verbose Print step-by-step progress messages.
+#'
+#' @section Shrinkage toward 1/2 (dosage mode): A mixed-ancestry
+#'   heterozygote carries one haplotype from each of its two ancestries, so
+#'   which one holds the alt allele cannot be read off the genotype. Its
+#'   allele is split between the two ancestries in proportion to the
+#'   variant's unambiguous carriers (the raw ratio), shrunk toward 1/2 by
+#'   \eqn{w}, the share of the variant's alt-allele evidence that comes from
+#'   ambiguous heterozygotes:
+#'   \deqn{p = (1 - w)\, p_{raw} + w / 2.}
+#'   A variant carried only by ambiguous heterozygotes (\eqn{w = 1}) is
+#'   split 1/2 : 1/2. With K populations every pair is shrunk toward 1/2
+#'   in the same way. \code{mode = "haplotype"} is deterministic and
+#'   applies no shrinkage.
 #'
 #' @return Invisibly, a list with one named numeric matrix (variants x
 #'   samples) per population (named after the MSP population codes, e.g.
@@ -902,136 +954,106 @@ read_bed_file <- function(bed, bim, fam) {
 #'
 #' @export
 ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
-                            chrom = NULL, use_gla = TRUE, verbose = TRUE) {
+                            chrom = NULL, verbose = TRUE) {
   mode <- match.arg(mode)
+  .check_file(vcf_path)
+  .check_file(msp_path)
+  if (is.numeric(chrom)) chrom <- as.character(chrom)   # allow chrom = 19
+  .check_string(chrom, null_ok = TRUE)
+  .check_flag(verbose)
 
   if (verbose) message("=== LANTERN Ancestry Split (Step 1, mode = ", mode, ") ===\n")
 
-  common <- .parse_vcf_msp_common(vcf_path, msp_path, chrom = chrom, verbose = verbose)
-
-  gt_hap0_mat    <- common$gt_hap0_mat
-  gt_hap1_mat    <- common$gt_hap1_mat
-  anc_hap0_var   <- common$anc_hap0_var
-  anc_hap1_var   <- common$anc_hap1_var
-  variant_info   <- common$variant_info
-  common_samples <- common$common_samples
-  pop_codes      <- common$pop_codes
-  n_variants     <- nrow(variant_info)
-  K              <- length(pop_codes)
-  if (K < 2) stop("ancestry_split() requires at least 2 populations in the MSP")
-  pop_names      <- names(pop_codes)
-
-  # ---- Auto-generate diploid ancestry codes for K populations ----
-  # pure_codes_named: pop_name -> unique diploid code 1..K (pop index)
-  # mixed_codes_df  : data.frame(code, pop1, pop2) for all K*(K-1)/2 pairs
-  # lookup[p0_idx, p1_idx] -> diploid code  (vectorised ancestry conversion)
-  hap_codes_v      <- as.integer(pop_codes)
-  pure_codes_named <- setNames(seq_len(K), pop_names)
-  pairs_mat        <- combn(K, 2)
-  M                <- ncol(pairs_mat)
-  mixed_code_v     <- K + seq_len(M)
-  mixed_codes_df   <- data.frame(
-    code = as.integer(mixed_code_v),
-    pop1 = pop_names[pairs_mat[1L, ]],
-    pop2 = pop_names[pairs_mat[2L, ]],
-    stringsAsFactors = FALSE
-  )
-  lookup <- matrix(0L, nrow = K, ncol = K)
-  diag(lookup) <- seq_len(K)
-  for (m in seq_len(M)) {
-    i <- pairs_mat[1L, m]; j <- pairs_mat[2L, m]
-    lookup[i, j] <- mixed_code_v[m]
-    lookup[j, i] <- mixed_code_v[m]
-  }
-
-  p0_mat <- matrix(match(as.vector(anc_hap0_var), hap_codes_v),
-                    nrow = n_variants, ncol = length(common_samples))
-  p1_mat <- matrix(match(as.vector(anc_hap1_var), hap_codes_v),
-                    nrow = n_variants, ncol = length(common_samples))
-  anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
-                         nrow = n_variants, ncol = length(common_samples))
-
-  # ---- GLA shrinkage target (dosage mode + use_gla only; haplotype
-  # splitting is deterministic and has no ambiguous ratio to shrink) ----
-  gla_combined <- NULL
-  arm_id       <- NULL
-  if (mode == "dosage" && use_gla) {
-    if (verbose) message("\nStep 6b: Computing per-arm global local ancestry (GLA)...")
-    anc_hap0_tract <- common$anc_hap0_tract
-    anc_hap1_tract <- common$anc_hap1_tract
-    n_tracts       <- ncol(anc_hap0_tract)
-    p0_tract_mat <- matrix(match(as.vector(anc_hap0_tract), hap_codes_v),
-                            nrow = length(common_samples), ncol = n_tracts)
-    p1_tract_mat <- matrix(match(as.vector(anc_hap1_tract), hap_codes_v),
-                            nrow = length(common_samples), ncol = n_tracts)
-    anc_diploid_tract <- matrix(lookup[cbind(as.vector(p0_tract_mat), as.vector(p1_tract_mat))],
-                                 nrow = length(common_samples), ncol = n_tracts)
-
-    gla_by_chrom <- .compute_arm_gla(common$tract_df, anc_diploid_tract,
-                                      pure_codes_named, mixed_codes_df)
-    gla_combined <- do.call(rbind, gla_by_chrom)
-    rownames(gla_combined) <- unlist(lapply(names(gla_by_chrom), function(cc) paste0(cc, c(".p", ".q"))))
-
-    variant_key <- paste0("chr", sub("^chr", "", variant_info$chrom),
-                          ifelse(.assign_arm(variant_info$chrom, variant_info$pos) == 0L, ".p", ".q"))
-    arm_id <- match(variant_key, rownames(gla_combined)) - 1L   # 0-based for C
-    if (anyNA(arm_id))
-      stop(sum(is.na(arm_id)), " variant(s) have no matching arm/GLA entry ",
-           "(chrom+arm not found in gla_combined). This should be unreachable ",
-           "given .parse_vcf_msp_common()'s tract filtering; please report it.")
-  }
+  common    <- .parse_vcf_msp_common(vcf_path, msp_path, chrom = chrom, verbose = verbose)
+  pop_codes <- common$pop_codes
+  if (length(pop_codes) < 2)
+    stop("ancestry_split() requires at least 2 populations in the MSP")
+  codes       <- .diploid_codes(names(pop_codes))
+  anc_diploid <- .to_diploid_codes(common$anc_hap0_var, common$anc_hap1_var,
+                                   pop_codes, codes$lookup)
 
   # ---- Split by ancestry ----
+  # Haplotype mode is deterministic. Dosage mode shrinks each ambiguous
+  # pair's split toward 1/2 (a uniform 1/K target shared by all variants;
+  # see the "Shrinkage toward 1/2" section).
   if (verbose) message("\nStep 7: Splitting genotypes by ancestry (", mode, ")...")
-  if (mode == "haplotype") {
-    res <- split_haplotype_multi(gt_hap0_mat, gt_hap1_mat,
-                                  anc_hap0_var, anc_hap1_var,
-                                  pop_codes = pop_codes)
+  res <- if (mode == "haplotype") {
+    split_haplotype_multi(common$gt_hap0_mat, common$gt_hap1_mat,
+                          common$anc_hap0_var, common$anc_hap1_var,
+                          pop_codes = pop_codes)
   } else {
-    gt_diploid <- gt_hap0_mat + gt_hap1_mat
-    res <- split_diploid_multi(gt_diploid, anc_diploid,
-                                pure_codes_named, mixed_codes_df,
-                                gla = gla_combined, arm_id = arm_id)
+    split_diploid_multi(common$gt_hap0_mat + common$gt_hap1_mat, anc_diploid,
+                        codes$pure, codes$mixed,
+                        gla = .uniform_shrink_target(names(pop_codes)),
+                        arm_id = integer(nrow(anc_diploid)))
   }
 
-  # ---- Per-variant pure-ancestry sample counts (feeds Step 3 gene weights) ----
-  # matrix() wrap avoids vapply's auto-simplification collapsing to a plain
-  # vector when n_variants == 1
-  ancestry_counts <- matrix(
-    vapply(pure_codes_named, function(code) count_ancestry_codes(anc_diploid, code),
-           numeric(n_variants)),
-    nrow = n_variants, ncol = K, dimnames = list(NULL, pop_names))
+  # Per-variant pure-ancestry sample counts (feed Step 3's gene weights)
+  ancestry_counts <- .pure_ancestry_counts(anc_diploid, codes$pure)
 
   # ---- Filter monomorphic variants ----
   if (verbose) message("\nStep 8: Filtering monomorphic variants...")
-  total   <- Reduce("+", res)
-  has_alt <- rowSums(total) > 0
+  has_alt <- rowSums(Reduce(`+`, res)) > 0
   n_mono  <- sum(!has_alt)
   if (n_mono > 0) {
     if (verbose) message("  Removed ", n_mono, " monomorphic variants")
-    res             <- lapply(res, function(m) m[has_alt, , drop = FALSE])
-    variant_info    <- variant_info[has_alt, , drop = FALSE]
-    ancestry_counts <- ancestry_counts[has_alt, , drop = FALSE]
+    res <- lapply(res, function(m) m[has_alt, , drop = FALSE])
   }
-  n_final <- nrow(variant_info)
-  if (n_final == 0) stop("All variants are monomorphic after filtering")
+  variant_info    <- common$variant_info[has_alt, , drop = FALSE]
+  ancestry_counts <- ancestry_counts[has_alt, , drop = FALSE]
+  if (nrow(variant_info) == 0) stop("All variants are monomorphic after filtering")
   rownames(variant_info) <- NULL
 
-  if (verbose) message("\n=== Step 1 Complete: ", n_final, " variants, ",
-                       length(common_samples), " samples, ", K, " populations ===\n")
-
-  overlap <- c(common$overlap,
-               n_variants_kept        = n_final,
-               n_monomorphic_filtered = n_mono)
+  if (verbose) message("\n=== Step 1 Complete: ", nrow(variant_info), " variants, ",
+                       length(common$common_samples), " samples, ",
+                       length(pop_codes), " populations ===\n")
 
   invisible(c(res, list(
     variant_info    = variant_info,
-    sample_ids      = common_samples,
+    sample_ids      = common$common_samples,
     mode            = mode,
     ancestry_counts = ancestry_counts,
     tract_info      = common$tract_df,
-    overlap         = overlap
+    overlap         = c(common$overlap,
+                        n_variants_kept        = nrow(variant_info),
+                        n_monomorphic_filtered = n_mono)
   )))
+}
+
+# Diploid ancestry coding for K populations: population p's pure code is p
+# (1..K), and the K*(K-1)/2 mixed pairs get codes K+1, K+2, ...
+# `lookup[a, b]` is the diploid code of a sample whose haplotypes carry
+# populations a and b.
+.diploid_codes <- function(pop_names) {
+  K     <- length(pop_names)
+  pairs <- utils::combn(K, 2)
+  mixed <- K + seq_len(ncol(pairs))
+  lookup <- diag(seq_len(K), K)
+  lookup[t(pairs)] <- mixed
+  lookup[t(pairs[2:1, , drop = FALSE])] <- mixed
+  storage.mode(lookup) <- "integer"
+  list(pure   = stats::setNames(seq_len(K), pop_names),
+       mixed  = data.frame(code = as.integer(mixed),
+                           pop1 = pop_names[pairs[1L, ]],
+                           pop2 = pop_names[pairs[2L, ]],
+                           stringsAsFactors = FALSE),
+       lookup = lookup)
+}
+
+# Combine two haplotype ancestry matrices (MSP population codes) into one
+# diploid ancestry-code matrix.
+.to_diploid_codes <- function(anc_hap0, anc_hap1, pop_codes, lookup) {
+  p0 <- match(as.vector(anc_hap0), pop_codes)
+  p1 <- match(as.vector(anc_hap1), pop_codes)
+  matrix(lookup[cbind(p0, p1)], nrow = nrow(anc_hap0), ncol = ncol(anc_hap0))
+}
+
+# Number of samples with pure ancestry in each population, per variant.
+.pure_ancestry_counts <- function(anc_diploid, pure_codes) {
+  matrix(vapply(pure_codes, function(code) count_ancestry_codes(anc_diploid, code),
+                numeric(nrow(anc_diploid))),
+         nrow = nrow(anc_diploid), ncol = length(pure_codes),
+         dimnames = list(NULL, names(pure_codes)))
 }
 
 # ============================================================================
@@ -1064,22 +1086,25 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
 #'   Only used when \code{vcf_path}/\code{msp_path} are supplied.
 #' @param verbose Print progress messages (default TRUE)
 #'
-#' @section GLA shrinkage: The \code{vcf_path}/\code{msp_path} shortcut
-#'   delegates to \code{\link{ancestry_split}}, which computes and applies
-#'   per-arm global local ancestry (GLA) shrinkage automatically from tract
-#'   positions. The direct \code{gt_matrix}/\code{pt_matrix} path has no
-#'   genomic position information and cannot derive GLA automatically, so it
-#'   always uses the original (unshrunk) p1/p2 estimator; this path also
-#'   reorders and filters variants internally (sample/region overlap,
-#'   monomorphic removal), so a caller-supplied \code{gla}/\code{arm_id}
-#'   could not be reliably kept aligned. Call \code{\link{split_diploid}}
-#'   directly (no internal reordering) if you need GLA shrinkage with a
-#'   pre-computed \code{gla}/\code{arm_id} of your own.
+#' @section Shrinkage: Both input paths split ambiguous mixed-ancestry
+#'   heterozygotes with the same shrinkage toward 1/2 as
+#'   \code{\link{ancestry_split}} (see its "Shrinkage toward 1/2" section).
+#'   The target is the same for every variant, so the direct
+#'   \code{gt_matrix}/\code{pt_matrix} path needs no position information.
+#'
+#' @section Matching variants to regions: Each variant (row of
+#'   \code{gt_matrix}) is paired with an ancestry column of \code{pt_matrix}
+#'   by, in order of preference: identical names; position, when rownames
+#'   look like \code{"chr:pos"} and colnames like \code{"chr:start-end"}
+#'   (the first region containing the variant; several variants may share a
+#'   region); or, when either matrix has no names, position in the matrix.
 #'
 #' @return List with elements:
-#'   \item{african}{African ancestry-specific dosage matrix}
+#'   \item{african}{African ancestry-specific dosage matrix (variants x
+#'     samples)}
 #'   \item{european}{European ancestry-specific dosage matrix}
-#'   \item{counts}{List of ancestry counts per region/sample}
+#'   \item{counts}{List (\code{african}, \code{european}, \code{mixed}) of
+#'     per-variant counts of samples with ancestry code 3, 1 and 2}
 #'   \item{overlap}{Overlap information}
 #'
 #' @examples
@@ -1106,318 +1131,200 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
 ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
                                    vcf_path = NULL, msp_path = NULL,
                                    chrom = NULL, verbose = TRUE) {
-
-  # ---- VCF/MSP shortcut path: delegate to ancestry_split() (Step 1) ----
-  if (!is.null(vcf_path) && !is.null(msp_path)) {
-    split_result <- ancestry_split(vcf_path, msp_path, mode = "dosage",
-                                    chrom = chrom, verbose = verbose)
-    pop_names <- setdiff(names(split_result),
-                          c("variant_info", "sample_ids", "mode",
-                            "ancestry_counts", "tract_info", "overlap"))
-    if (length(pop_names) != 2)
-      stop("ancestry_split_dosage()'s vcf_path/msp_path shortcut only ",
-           "supports 2-population (AFR/EUR) MSP files; use ancestry_split() ",
-           "directly for K > 2 populations.")
-    afr_name <- pop_names[toupper(pop_names) %in% c("AFR", "AFRICAN")]
-    eur_name <- pop_names[toupper(pop_names) %in% c("EUR", "EUROPEAN")]
-    if (length(afr_name) != 1 || length(eur_name) != 1) {
-      afr_name <- pop_names[1]; eur_name <- pop_names[2]
-    }
-    n_samp     <- length(split_result$sample_ids)
-    afr_counts <- split_result$ancestry_counts[, afr_name]
-    eur_counts <- split_result$ancestry_counts[, eur_name]
-    return(invisible(list(
-      african  = split_result[[afr_name]],
-      european = split_result[[eur_name]],
-      counts   = list(african  = afr_counts,
-                      european = eur_counts,
-                      mixed    = n_samp - afr_counts - eur_counts),
-      overlap  = split_result$overlap
-    )))
+  .check_flag(verbose)
+  if (!is.null(vcf_path) || !is.null(msp_path)) {
+    if (is.null(vcf_path) || is.null(msp_path))
+      stop("Supply both `vcf_path` and `msp_path`", call. = FALSE)
+    return(.split_dosage_from_vcf(vcf_path, msp_path, chrom, verbose))
   }
   if (is.null(gt_matrix) || is.null(pt_matrix))
     stop("Provide either (gt_matrix, pt_matrix) or (vcf_path, msp_path)")
+  .check_matrix(gt_matrix, values = 0:2)
+  .check_matrix(pt_matrix, values = 0:3)
 
   if (verbose) message("=== LANTERN Ancestry Pipeline ===\n")
-
-  # Record original dimensions
-  n_gt_samples_orig <- ncol(gt_matrix)
-  n_gt_variants_orig <- nrow(gt_matrix)
-  n_pt_samples_orig <- nrow(pt_matrix)
-  n_pt_regions_orig <- ncol(pt_matrix)
-
-  # ========================================================================
-  # Step 1: Find sample overlap (memory efficient - use indices, not copies)
-  # ========================================================================
   if (verbose) message("Step 1: Finding sample overlap...")
-
-  gt_sample_names <- colnames(gt_matrix)
-  pt_sample_names <- rownames(pt_matrix)
-
-  # Handle unnamed matrices
-  if (is.null(gt_sample_names) || is.null(pt_sample_names)) {
-    n_gt <- ncol(gt_matrix)
-    n_pt <- nrow(pt_matrix)
-    min_n <- min(n_gt, n_pt)
-    if (n_gt != n_pt) {
-      warning("Matrices have different dimensions (GT: ", n_gt, " cols, PT: ", n_pt,
-              " rows). Using first ", min_n, " samples.")
-    }
-    gt_sample_names <- paste0("sample_", seq_len(min_n))
-    pt_sample_names <- paste0("sample_", seq_len(min_n))
-    colnames(gt_matrix) <- gt_sample_names
-    rownames(pt_matrix) <- pt_sample_names
-  }
-
-  # Find common samples by name
-  common_samples <- intersect(gt_sample_names, pt_sample_names)
-
-  if (length(common_samples) == 0) {
-    stop("No common samples found between GT and PT matrices")
-  }
-
-  # Calculate indices for subsetting (avoid copying until needed)
-  gt_sample_idx <- match(common_samples, gt_sample_names)
-  pt_sample_idx <- match(common_samples, pt_sample_names)
-
-  n_common_samples <- length(common_samples)
-  dropped_samples <- c(
-    setdiff(gt_sample_names, common_samples),
-    setdiff(pt_sample_names, common_samples)
-  )
-
-  if (verbose) {
-    message("  Samples: ", n_gt_samples_orig, " in GT, ", n_pt_samples_orig, " in PT")
-    message("  Common samples: ", n_common_samples)
-    if (length(dropped_samples) > 0) {
-      message("  Dropped: ", paste(head(dropped_samples, 3), collapse = ", "),
-              if (length(dropped_samples) > 3) "..." else "")
-    }
-  }
-
-  # ========================================================================
-  # Step 2: Find variant/region overlap
-  # ========================================================================
+  smp <- .match_samples(gt_matrix, pt_matrix, verbose)
   if (verbose) message("\nStep 2: Finding variant/region overlap...")
+  var <- .match_variants(smp$gt, smp$pt, verbose)
 
-  gt_var_names <- rownames(gt_matrix)
-  pt_region_names <- colnames(pt_matrix)
-
-  # Handle unnamed matrices
-  if (is.null(gt_var_names) || is.null(pt_region_names)) {
-    n_gt <- nrow(gt_matrix)
-    n_pt <- ncol(pt_matrix)
-    min_n <- min(n_gt, n_pt)
-    if (n_gt != n_pt) {
-      warning("Matrices have different dimensions (GT: ", n_gt, " rows, PT: ",
-              n_pt, " cols). Using first ", min_n, " variants.")
-    }
-    gt_var_names <- paste0("var_", seq_len(min_n))
-    pt_region_names <- paste0("var_", seq_len(min_n))
-    rownames(gt_matrix) <- gt_var_names
-    colnames(pt_matrix) <- pt_region_names
-  }
-
-  # Try exact matching first (fast)
-  common_vars <- intersect(gt_var_names, pt_region_names)
-
-  # If no exact match, try coordinate-based matching
-  if (length(common_vars) == 0) {
-    if (verbose) message("  No exact matches. Trying coordinate-based matching...")
-
-    # Pre-parse GT coordinates: chr:pos -> list(chr, pos)
-    parse_gt_coord <- function(name) {
-      parts <- strsplit(name, ":")[[1]]
-      if (length(parts) >= 2) {
-        pos <- suppressWarnings(as.numeric(parts[2]))
-        if (is.na(pos)) pos <- NULL
-        list(chr = parts[1], pos = pos)
-      } else {
-        NULL
-      }
-    }
-
-    # Pre-parse PT coordinates: chr:start-end -> list(chr, start, end)
-    parse_pt_coord <- function(name) {
-      chr_part <- strsplit(name, ":")[[1]]
-      if (length(chr_part) >= 2) {
-        coords <- strsplit(chr_part[2], "-")[[1]]
-        if (length(coords) == 2) {
-          start <- suppressWarnings(as.numeric(coords[1]))
-          end <- suppressWarnings(as.numeric(coords[2]))
-          if (!is.na(start) && !is.na(end)) {
-            return(list(chr = chr_part[1], start = start, end = end))
-          }
-        }
-      }
-      NULL
-    }
-
-    # Parse all coordinates upfront (vectorized approach)
-    gt_coords <- lapply(gt_var_names, parse_gt_coord)
-    pt_coords <- lapply(pt_region_names, parse_pt_coord)
-
-    # Find valid matches using matrix operations where possible
-    matched_gt_idx <- integer()
-    matched_pt_idx <- integer()
-
-    # Build match matrix for O(n*m) scan
-    for (i in seq_along(gt_coords)) {
-      if (is.null(gt_coords[[i]]$pos)) next
-      for (j in seq_along(pt_coords)) {
-        pt <- pt_coords[[j]]
-        if (is.null(pt$start)) next
-        if (gt_coords[[i]]$chr == pt$chr &&
-            gt_coords[[i]]$pos >= pt$start &&
-            gt_coords[[i]]$pos <= pt$end) {
-          matched_gt_idx <- c(matched_gt_idx, i)
-          matched_pt_idx <- c(matched_pt_idx, j)
-          break  # Take first matching region
-        }
-      }
-    }
-
-    # Clean up intermediate objects
-    rm(gt_coords, pt_coords)
-    gc()
-
-    if (length(matched_gt_idx) > 0) {
-      common_vars <- unique(c(gt_var_names[matched_gt_idx], pt_region_names[matched_pt_idx]))
-      if (verbose) {
-        message("  Found ", length(matched_gt_idx), " variants in ",
-                length(unique(matched_pt_idx)), " regions")
-      }
-    } else {
-      # Fallback to positional match by order
-      warning("No variant/region name or coordinate overlap. Matching by order.")
-      min_n <- min(length(gt_var_names), length(pt_region_names))
-      rownames(gt_matrix) <- paste0("var_", seq_len(nrow(gt_matrix)))
-      colnames(pt_matrix) <- paste0("region_", seq_len(ncol(pt_matrix)))
-      common_vars <- paste0("shared_", seq_len(min_n))
-    }
-  }
-
-  # Calculate indices for variant/region subsetting
-  gt_var_idx <- match(intersect(gt_var_names, common_vars), gt_var_names)
-  pt_region_idx <- match(intersect(pt_region_names, common_vars), pt_region_names)
-
-  n_common_vars <- length(common_vars)
-  dropped_variants <- c(
-    setdiff(gt_var_names, common_vars),
-    setdiff(pt_region_names, common_vars)
-  )
-
-  if (verbose) {
-    message("  Variants in GT: ", n_gt_variants_orig)
-    message("  Regions in PT: ", n_pt_regions_orig)
-    message("  Common variants/regions: ", n_common_vars)
-    if (length(dropped_variants) > 0) {
-      message("  Dropped: ", paste(head(dropped_variants, 3), collapse = ", "),
-              if (length(dropped_variants) > 3) "..." else "")
-    }
-  }
-
-  # ========================================================================
-  # Step 3: Single-pass subsetting (memory efficient)
-  # ========================================================================
+  # pt_matrix is samples x regions; the C splitter reads ancestry with the
+  # genotype matrix's layout, so build variants x samples, one column of
+  # pt_matrix per variant.
   if (verbose) message("\nStep 3: Subsetting matrices...")
+  gt  <- smp$gt[var$gt_idx, smp$gt_idx, drop = FALSE]
+  anc <- t(smp$pt[smp$pt_idx, var$pt_idx, drop = FALSE])
 
-  # Subset both matrices in single operation using calculated indices
-  # GT: rows = variants we want, cols = samples we want
-  # PT: rows = samples we want, cols = regions we want
-  gt_subset <- gt_matrix[gt_var_idx, gt_sample_idx, drop = FALSE]
-  pt_subset <- pt_matrix[pt_sample_idx, pt_region_idx, drop = FALSE]
-
-  # Clean up intermediates immediately
-  rm(gt_matrix, pt_matrix)
-  gc()
-
-  # ========================================================================
-  # Step 4: Validate dimensions
-  # ========================================================================
-  if (ncol(gt_subset) != nrow(pt_subset)) {
-    stop("After overlap filtering: GT cols (", ncol(gt_subset),
-         ") != PT rows (", nrow(pt_subset), ")")
-  }
-  if (nrow(gt_subset) != ncol(pt_subset)) {
-    stop("After overlap filtering: GT rows (", nrow(gt_subset),
-         ") != PT cols (", ncol(pt_subset), "). ",
-         "Each GT variant should match to exactly one PT region.")
-  }
-
-  # ========================================================================
-  # Step 4: Filter monomorphic variants (no alt alleles)
-  # ========================================================================
   if (verbose) message("\nStep 3b: Filtering monomorphic variants...")
+  has_alt <- rowSums(gt > 0) > 0
+  n_mono  <- sum(!has_alt)
+  if (n_mono > 0 && verbose)
+    message("  Removed ", n_mono, " monomorphic variants (no alt alleles)")
+  dropped_variants <- c(var$dropped, var$gt_names[var$gt_idx][!has_alt])
+  gt  <- gt[has_alt, , drop = FALSE]
+  anc <- anc[has_alt, , drop = FALSE]
+  if (nrow(gt) == 0) stop("All variants are monomorphic (no alt alleles)")
 
-  variant_has_alt <- rowSums(gt_subset > 0) > 0
-  n_monomorphic <- sum(!variant_has_alt)
-
-  if (n_monomorphic > 0) {
-    if (verbose) message("  Removed ", n_monomorphic, " monomorphic variants (no alt alleles)")
-
-    dropped_variants <- c(dropped_variants, rownames(gt_subset)[!variant_has_alt])
-
-    gt_subset <- gt_subset[variant_has_alt, , drop = FALSE]
-    pt_subset <- pt_subset[, variant_has_alt, drop = FALSE]
-  }
-
-  if (nrow(gt_subset) == 0) {
-    stop("All variants are monomorphic (no alt alleles)")
-  }
-
-  # ========================================================================
-  # Step 5: Split genotypes by ancestry (C backend)
-  # ========================================================================
+  # Same shrinkage toward 1/2 as ancestry_split()
   if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
+  result <- split_diploid(gt, anc, gla = .uniform_shrink_target(c("AFR", "EUR")),
+                          arm_id = integer(nrow(gt)))
 
-  result <- split_diploid(gt_subset, pt_subset)
-
-  # Capture post-filter variant count BEFORE removing gt_subset
-  n_variants_kept_final <- nrow(gt_subset)
-
-  # Clean up gt_subset after C call (keep pt_subset for counts - it's small)
-  rm(gt_subset)
-  gc()
-
-  if (verbose) {
-    message("  -> African dosage matrix: ", nrow(result$african), " x ", ncol(result$african))
-    message("  -> European dosage matrix: ", nrow(result$european), " x ", ncol(result$european))
-  }
-
-  # ========================================================================
-  # Step 6: Count ancestries per region
-  # ========================================================================
-  if (verbose) message("\nStep 5: Counting ancestries per region...")
-
-  counts <- list(
-    african = count_ancestry_codes(pt_subset, 3),
-    european = count_ancestry_codes(pt_subset, 1),
-    mixed = count_ancestry_codes(pt_subset, 2)
-  )
-
-  if (verbose) {
-    message("  -> African (3): median = ", median(counts$african))
-    message("  -> European (1): median = ", median(counts$european))
-    message("  -> Mixed (2): median = ", median(counts$mixed))
-  }
-
+  if (verbose) message("\nStep 5: Counting ancestries per variant...")
+  counts <- list(african  = count_ancestry_codes(anc, 3),
+                 european = count_ancestry_codes(anc, 1),
+                 mixed    = count_ancestry_codes(anc, 2))
   if (verbose) message("\n=== Pipeline Complete ===\n")
 
   invisible(list(
-    african = result$african,
+    african  = result$african,
     european = result$european,
-    counts = counts,
-    overlap = list(
-      n_samples_total = n_gt_samples_orig + n_pt_samples_orig - n_common_samples,
-      n_samples_kept = n_common_samples,
-      n_variants_total = n_gt_variants_orig,
-      n_variants_kept = n_variants_kept_final,
-      n_monomorphic_filtered = n_monomorphic,
-      dropped_samples = unique(dropped_samples),
-      dropped_variants = unique(dropped_variants)
+    counts   = counts,
+    overlap  = list(
+      n_samples_total        = ncol(gt_matrix) + nrow(pt_matrix) - length(smp$common),
+      n_samples_kept         = length(smp$common),
+      n_variants_total       = nrow(gt_matrix),
+      n_variants_kept        = nrow(gt),
+      n_monomorphic_filtered = n_mono,
+      dropped_samples        = unique(smp$dropped),
+      dropped_variants       = unique(dropped_variants)
     )
   ))
+}
+
+# ancestry_split_dosage(vcf_path =, msp_path =): run ancestry_split() and
+# return its two populations in this function's african/european layout.
+.split_dosage_from_vcf <- function(vcf_path, msp_path, chrom, verbose) {
+  split_result <- ancestry_split(vcf_path, msp_path, mode = "dosage",
+                                 chrom = chrom, verbose = verbose)
+  pops <- .afr_eur_names(.split_pop_names(split_result), "ancestry_split_dosage()")
+  counts <- split_result$ancestry_counts
+  invisible(list(
+    african  = split_result[[pops[["afr"]]]],
+    european = split_result[[pops[["eur"]]]],
+    counts   = list(african  = counts[, pops[["afr"]]],
+                    european = counts[, pops[["eur"]]],
+                    mixed    = length(split_result$sample_ids) -
+                      counts[, pops[["afr"]]] - counts[, pops[["eur"]]]),
+    overlap  = split_result$overlap
+  ))
+}
+
+# Names of the per-population dosage matrices in an ancestry_split() result.
+.split_pop_names <- function(split_result) {
+  setdiff(names(split_result),
+          c("variant_info", "sample_ids", "mode", "ancestry_counts",
+            "tract_info", "overlap"))
+}
+
+# Pick the African and European population of a two-population split
+# (AFR/EUR, or AFRICAN/EUROPEAN in any case), else the first and second.
+.afr_eur_names <- function(pop_names, caller) {
+  if (length(pop_names) != 2)
+    stop(caller, " only supports 2-population (AFR/EUR) MSP files; use ",
+         "ancestry_split() directly for K > 2 populations.", call. = FALSE)
+  afr <- pop_names[toupper(pop_names) %in% c("AFR", "AFRICAN")]
+  eur <- pop_names[toupper(pop_names) %in% c("EUR", "EUROPEAN")]
+  if (length(afr) != 1 || length(eur) != 1) {
+    afr <- pop_names[1]
+    eur <- pop_names[2]
+  }
+  c(afr = afr, eur = eur)
+}
+
+# Give an unnamed axis positional names, keeping the first min(n_gt, n_pt)
+# entries when the two lengths differ.
+.name_by_position <- function(n_gt, n_pt, prefix, what) {
+  n <- min(n_gt, n_pt)
+  if (n_gt != n_pt)
+    warning("Matrices have different numbers of ", what, " (GT: ", n_gt,
+            ", PT: ", n_pt, "). Using the first ", n, ".", call. = FALSE)
+  paste0(prefix, seq_len(n))
+}
+
+# Samples present in both matrices (GT columns, PT rows), matched by name.
+.match_samples <- function(gt, pt, verbose) {
+  if (is.null(colnames(gt)) || is.null(rownames(pt))) {
+    ids <- .name_by_position(ncol(gt), nrow(pt), "sample_", "samples")
+    gt  <- gt[, seq_along(ids), drop = FALSE]
+    pt  <- pt[seq_along(ids), , drop = FALSE]
+    colnames(gt) <- rownames(pt) <- ids
+  }
+  common <- intersect(colnames(gt), rownames(pt))
+  if (length(common) == 0) stop("No common samples found between GT and PT matrices")
+  dropped <- c(setdiff(colnames(gt), common), setdiff(rownames(pt), common))
+  if (verbose) {
+    message("  Samples: ", ncol(gt), " in GT, ", nrow(pt), " in PT")
+    message("  Common samples: ", length(common))
+    if (length(dropped) > 0)
+      message("  Dropped: ", toString(utils::head(dropped, 3)),
+              if (length(dropped) > 3) "...")
+  }
+  list(gt = gt, pt = pt, common = common, dropped = dropped,
+       gt_idx = match(common, colnames(gt)), pt_idx = match(common, rownames(pt)))
+}
+
+# Pair each GT variant (row) with a PT region (column): see the "Matching
+# variants to regions" section of ?ancestry_split_dosage. Returns row/column
+# indices of equal length (pt_idx may repeat) and the unmatched names.
+.match_variants <- function(gt, pt, verbose) {
+  if (is.null(rownames(gt)) || is.null(colnames(pt))) {
+    ids <- .name_by_position(nrow(gt), ncol(pt), "var_", "variants")
+    rownames(gt) <- NULL
+    colnames(pt) <- NULL
+    gt_names <- c(ids, character(nrow(gt) - length(ids)))
+    pt_names <- c(ids, character(ncol(pt) - length(ids)))
+  } else {
+    gt_names <- rownames(gt)
+    pt_names <- colnames(pt)
+  }
+
+  pt_idx <- match(gt_names, pt_names)
+  pt_idx[!nzchar(gt_names)] <- NA
+  if (all(is.na(pt_idx))) {
+    if (verbose) message("  No exact matches. Trying coordinate-based matching...")
+    pt_idx <- .match_by_coordinates(gt_names, pt_names)
+    if (all(is.na(pt_idx)))
+      stop("No variant overlap between rownames(gt_matrix) and ",
+           "colnames(pt_matrix), by name or by \"chr:pos\" within ",
+           "\"chr:start-end\" coordinates", call. = FALSE)
+    if (verbose) message("  Found ", sum(!is.na(pt_idx)), " variants in ",
+                         length(unique(stats::na.omit(pt_idx))), " regions")
+  }
+  gt_idx  <- which(!is.na(pt_idx))
+  pt_idx  <- pt_idx[gt_idx]
+  dropped <- c(gt_names[-gt_idx], pt_names[-unique(pt_idx)])
+  dropped <- dropped[nzchar(dropped)]
+  if (verbose) {
+    message("  Variants in GT: ", nrow(gt))
+    message("  Regions in PT: ", ncol(pt))
+    message("  Matched variants: ", length(gt_idx))
+    if (length(dropped) > 0)
+      message("  Dropped: ", toString(utils::head(dropped, 3)),
+              if (length(dropped) > 3) "...")
+  }
+  list(gt_idx = gt_idx, pt_idx = pt_idx, dropped = dropped, gt_names = gt_names)
+}
+
+# For each "chr:pos" variant name, the index of the first "chr:start-end"
+# region name containing it (NA if none or unparsable).
+.match_by_coordinates <- function(gt_names, pt_names) {
+  field2 <- function(x) ifelse(grepl(":", x, fixed = TRUE),
+                               sub("^[^:]*:([^:]*).*$", "\\1", x), NA_character_)
+  gt_chr <- sub(":.*$", "", gt_names)
+  gt_pos <- suppressWarnings(as.numeric(field2(gt_names)))
+
+  range_str <- field2(pt_names)
+  is_range  <- grepl("^[^-]+-[^-]+$", range_str)
+  pt_chr    <- sub(":.*$", "", pt_names)
+  pt_start  <- suppressWarnings(as.numeric(ifelse(is_range, sub("-.*$", "", range_str), NA)))
+  pt_end    <- suppressWarnings(as.numeric(ifelse(is_range, sub("^.*-", "", range_str), NA)))
+
+  vapply(seq_along(gt_names), function(i) {
+    if (is.na(gt_pos[i])) return(NA_integer_)
+    hit <- which(pt_chr == gt_chr[i] & pt_start <= gt_pos[i] & pt_end >= gt_pos[i])
+    if (length(hit)) hit[1] else NA_integer_
+  }, integer(1))
 }
 
 # ============================================================================
@@ -1439,7 +1346,8 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
 #'   \code{options(lantern.vcf_reader = "bcftools")} or \code{"seqarray"}
 #'   to force one.
 #' @param msp_path Path to RFMix MSP file (plain text or gzipped TSV).
-#' @param out_path Output directory for GDS and cache files.
+#' @param out_path Output directory for the GDS files. Only needed (and
+#'   then required) when \code{write_vcf = TRUE}.
 #' @param chrom Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
 #'   If \code{NULL}, all chromosomes present in the VCF are used.
 #' @param write_vcf Logical; if \code{TRUE}, materialize ancestry-specific
@@ -1467,42 +1375,28 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
 #' unlink(out_dir, recursive = TRUE)
 #'
 #' @export
-ancestry_split_phased <- function(vcf_path, msp_path, out_path,
+ancestry_split_phased <- function(vcf_path, msp_path, out_path = NULL,
                                 chrom = NULL, write_vcf = TRUE,
                                 verbose = TRUE) {
+  .check_flag(write_vcf)
+  .check_flag(verbose)
+  if (write_vcf) .check_string(out_path)
 
   if (verbose) message("=== LANTERN Phased Ancestry Pipeline ===\n")
-
   split_result <- ancestry_split(vcf_path, msp_path, mode = "haplotype",
-                                  chrom = chrom, verbose = verbose)
-
-  pop_names <- setdiff(names(split_result),
-                        c("variant_info", "sample_ids", "mode",
-                          "ancestry_counts", "tract_info", "overlap"))
-  if (length(pop_names) != 2)
-    stop("ancestry_split_phased() only supports 2-population (AFR/EUR) MSP ",
-         "files; use ancestry_split() directly for K > 2 populations.")
-
-  afr_name <- pop_names[toupper(pop_names) %in% c("AFR", "AFRICAN")]
-  eur_name <- pop_names[toupper(pop_names) %in% c("EUR", "EUROPEAN")]
-  if (length(afr_name) != 1 || length(eur_name) != 1) {
-    afr_name <- pop_names[1]; eur_name <- pop_names[2]
-  }
-  african_mat  <- split_result[[afr_name]]
-  european_mat <- split_result[[eur_name]]
+                                 chrom = chrom, verbose = verbose)
+  pops <- .afr_eur_names(.split_pop_names(split_result), "ancestry_split_phased()")
 
   vcf_paths <- NULL
   if (write_vcf) {
-    if (!dir.exists(out_path)) dir.create(out_path, recursive = TRUE)
     gds_paths <- write_ancestry_gds(split_result, out_path, verbose = verbose)
-    vcf_paths <- list(african_gds  = unname(gds_paths[[afr_name]]),
-                      european_gds = unname(gds_paths[[eur_name]]))
+    vcf_paths <- list(african_gds  = unname(gds_paths[[pops[["afr"]]]]),
+                      european_gds = unname(gds_paths[[pops[["eur"]]]]))
   }
-
   if (verbose) message("\n=== Pipeline Complete ===\n")
 
-  invisible(list(african      = african_mat,
-                 european     = european_mat,
+  invisible(list(african      = split_result[[pops[["afr"]]]],
+                 european     = split_result[[pops[["eur"]]]],
                  variant_info = split_result$variant_info,
                  sample_ids   = split_result$sample_ids,
                  tract_info   = split_result$tract_info,

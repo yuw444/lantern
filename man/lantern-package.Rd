@@ -24,18 +24,18 @@ with pure C backend for performance-critical operations.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://yuw444.github.io/LANTERN/}
-  \item \url{https://github.com/yuw444/LANTERN}
-  \item Report bugs at \url{https://github.com/yuw444/LANTERN/issues}
+  \item \url{https://yuw444.github.io/lantern/}
+  \item \url{https://github.com/yuw444/lantern}
+  \item Report bugs at \url{https://github.com/yuw444/lantern/issues}
 }
 
 }
 \author{
-\strong{Maintainer}: Yu Wang \email{wangyu19940804@gmail.com}
+\strong{Maintainer}: Yu Wang \email{ywang@mcw.edu}
 
 Authors:
 \itemize{
-  \item Yu Wang \email{wangyu19940804@gmail.com}
+  \item Yu Wang \email{ywang@mcw.edu}
   \item Bjoernar Tuftin \email{btuftin@email.unc.edu}
   \item Paul Auer \email{pauer@mcw.edu}
 }
